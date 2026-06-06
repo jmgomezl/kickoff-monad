@@ -438,27 +438,31 @@ app.get("/api/history/:userId", async (req, res) => {
     const winners = loadWinners();
     const items = [];
     for (let id = count; id >= from; id--) {
-      const offers = await market.getOffers(id);
-      const idx = offers.findIndex((o) => o.buyer.toLowerCase() === addr.toLowerCase());
-      if (idx === -1) continue;
-      const l = await market.getListing(id);
-      const state = Number(l.state);
-      const decided = state >= 2;
-      const won = decided && Number(l.winnerIndex) === idx;
-      const txHash = winners[String(id)] || null;
-      items.push({
-        listingId: String(id),
-        itemName: l.itemName,
-        maxBudgetMcop: fmt(offers[idx].maxBudget),
-        request: offers[idx].request,
-        state,
-        decided,
-        won,
-        finalPriceMcop: won ? fmt(l.finalPrice) : null,
-        reasoning: decided ? l.reasoning || null : null,
-        txHash,
-        explorerUrl: won && txHash ? `${MONAD_EXPLORER}/tx/${txHash}` : null,
-      });
+      try {
+        const offers = await market.getOffers(id);
+        const idx = offers.findIndex((o) => o.buyer.toLowerCase() === addr.toLowerCase());
+        if (idx === -1) continue;
+        const l = await market.getListing(id);
+        const state = Number(l.state);
+        const decided = state >= 2;
+        const won = decided && Number(l.winnerIndex) === idx;
+        const txHash = winners[String(id)] || null;
+        items.push({
+          listingId: String(id),
+          itemName: l.itemName,
+          maxBudgetMcop: fmt(offers[idx].maxBudget),
+          request: offers[idx].request,
+          state,
+          decided,
+          won,
+          finalPriceMcop: won ? fmt(l.finalPrice) : null,
+          reasoning: decided ? l.reasoning || null : null,
+          txHash,
+          explorerUrl: won && txHash ? `${MONAD_EXPLORER}/tx/${txHash}` : null,
+        });
+      } catch (_) {
+        /* skip a listing that hit a transient RPC error */
+      }
     }
     const data = { address: addr, items };
     historyCache.set(addr.toLowerCase(), { ts: Date.now(), data });
@@ -478,23 +482,27 @@ app.get("/api/listings", async (_req, res) => {
     const winners = loadWinners();
     const out = [];
     for (let id = count; id >= from; id--) {
-      const l = await market.getListing(id);
-      const offerCount = Number(await market.getOfferCount(id));
-      const state = Number(l.state);
-      const txHash = winners[String(id)] || null;
-      out.push({
-        listingId: String(id),
-        itemName: l.itemName,
-        state, // 1 open, 2 decided, 3 revealed, 4 cancelled
-        offerCount,
-        deadline: Number(l.deadline),
-        finalPriceMcop: state >= 2 ? fmt(l.finalPrice) : null,
-        revealedReserveMcop: state >= 3 ? fmt(l.revealedReserve) : null,
-        marginMcop: state >= 3 ? fmt(l.finalPrice - l.revealedReserve) : null,
-        reasoning: state >= 2 ? l.reasoning || null : null,
-        txHash,
-        explorerUrl: txHash ? `${MONAD_EXPLORER}/tx/${txHash}` : null,
-      });
+      try {
+        const l = await market.getListing(id);
+        const offerCount = Number(await market.getOfferCount(id));
+        const state = Number(l.state);
+        const txHash = winners[String(id)] || null;
+        out.push({
+          listingId: String(id),
+          itemName: l.itemName,
+          state, // 1 open, 2 decided, 3 revealed, 4 cancelled
+          offerCount,
+          deadline: Number(l.deadline),
+          finalPriceMcop: state >= 2 ? fmt(l.finalPrice) : null,
+          revealedReserveMcop: state >= 3 ? fmt(l.revealedReserve) : null,
+          marginMcop: state >= 3 ? fmt(l.finalPrice - l.revealedReserve) : null,
+          reasoning: state >= 2 ? l.reasoning || null : null,
+          txHash,
+          explorerUrl: txHash ? `${MONAD_EXPLORER}/tx/${txHash}` : null,
+        });
+      } catch (_) {
+        /* skip a listing that hit a transient RPC error */
+      }
     }
     const data = { listings: out, market: MARKET_ADDRESS };
     listingsCache = { ts: Date.now(), data };
