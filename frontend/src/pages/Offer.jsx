@@ -56,12 +56,29 @@ export default function Offer() {
         if (w?.address) setWallet((p) => ({ ...(p || {}), address: w.address }));
       })
       .catch(() => {});
-
-    fetch(`${BACKEND_URL}/api/active`)
-      .then((r) => r.json())
-      .then((r) => setListing(r.active || null))
-      .catch(() => setListing(null));
   }, [uid]);
+
+  // Keep the active deal fresh: poll, and refresh the moment the app regains
+  // focus (so users never have to close/reopen to see if a deal is available).
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      fetch(`${BACKEND_URL}/api/active`)
+        .then((r) => r.json())
+        .then((r) => alive && setListing(r.active || null))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 4000);
+    const onVis = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", load);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", load);
+    };
+  }, []);
 
   // Poll the wallet balance independently of the (slow) join response.
   useEffect(() => {

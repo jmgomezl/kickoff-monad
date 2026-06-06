@@ -645,8 +645,10 @@ function mergedLog(id) {
   return log;
 }
 
+let activeCache = null;
 app.get("/api/active", async (_req, res) => {
   try {
+    if (activeCache && Date.now() - activeCache.ts < 3000) return res.json(activeCache.data);
     const count = Number(await market.listingCount());
     let active = null;
     let latest = null;
@@ -669,7 +671,9 @@ app.get("/api/active", async (_req, res) => {
         break;
       }
     }
-    res.json({ active, latest, listingCount: count });
+    const data = { active, latest, listingCount: count };
+    activeCache = { ts: Date.now(), data };
+    res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
