@@ -39,11 +39,18 @@ async function complete(prompt, { maxTokens = 600 } = {}) {
     return r.content.map((c) => (c.type === "text" ? c.text : "")).join("");
   }
   if (_provider === "openai") {
-    const r = await _client.chat.completions.create({
-      model: _model,
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }],
-    });
+    // gpt-5 / o-series are reasoning models: they use max_completion_tokens (not
+    // max_tokens) and reasoning tokens eat into that budget — so raise the floor
+    // and keep reasoning minimal to stay fast and leave room for the JSON output.
+    const isReasoning = /^(gpt-5|o[1-9])/.test(_model);
+    const params = { model: _model, messages: [{ role: "user", content: prompt }] };
+    if (isReasoning) {
+      params.max_completion_tokens = Math.max(maxTokens, 2000);
+      params.reasoning_effort = "minimal";
+    } else {
+      params.max_tokens = maxTokens;
+    }
+    const r = await _client.chat.completions.create(params);
     return r.choices?.[0]?.message?.content || "";
   }
   throw new Error("No LLM provider configured (set ANTHROPIC_API_KEY or OPENAI_API_KEY).");
