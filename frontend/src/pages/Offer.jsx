@@ -328,6 +328,12 @@ export default function Offer() {
                       ? `${t("histPaid")} ${Number(h.finalPriceMcop).toLocaleString()} MONADCOP`
                       : `${t("histCap")}: ${Number(h.maxBudgetMcop).toLocaleString()} MONADCOP`}
                   </div>
+                  {h.won && h.reasoning && <div className="ai-reason">🤖 {h.reasoning}</div>}
+                  {h.explorerUrl && (
+                    <a className="ai-tx" href={h.explorerUrl} target="_blank" rel="noreferrer">
+                      {t("viewOnExplorer")} ↗
+                    </a>
+                  )}
                 </div>
               ))}
             </div>

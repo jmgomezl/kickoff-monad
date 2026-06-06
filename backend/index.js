@@ -71,6 +71,20 @@ function saveReveals(r) {
   fs.mkdirSync(path.dirname(REVEALS_FILE), { recursive: true });
   fs.writeFileSync(REVEALS_FILE, JSON.stringify(r, null, 2));
 }
+
+// Winner tx hashes (persisted) so history/seller views can deep-link the transfer.
+const WINNERS_FILE = path.join(__dirname, "..", "deploy", "winners.json");
+function loadWinners() {
+  try {
+    return JSON.parse(fs.readFileSync(WINNERS_FILE, "utf8"));
+  } catch (_) {
+    return {};
+  }
+}
+function saveWinners(w) {
+  fs.mkdirSync(path.dirname(WINNERS_FILE), { recursive: true });
+  fs.writeFileSync(WINNERS_FILE, JSON.stringify(w, null, 2));
+}
 const agentAddress = AGENT_ADDRESS || (treasury ? treasury.address : ethers.ZeroAddress);
 
 const hasLlm = llm.provider() !== "none";
@@ -214,6 +228,12 @@ startEventPoller({
         txHash: log.transactionHash,
         explorerUrl,
       });
+      // Persist the winning tx so history/seller views can deep-link the transfer.
+      if (log.transactionHash) {
+        const w = loadWinners();
+        w[String(a.listingId)] = log.transactionHash;
+        saveWinners(w);
+      }
       // Notify every participant of their result in Telegram.
       sendResultDMs(a.listingId, a.winner, fmt(a.finalPrice), fmt(a.savings), explorerUrl);
     },
@@ -415,6 +435,7 @@ app.get("/api/history/:userId", async (req, res) => {
 
     const count = Number(await market.listingCount());
     const from = Math.max(1, count - 25); // last 25 deals
+    const winners = loadWinners();
     const items = [];
     for (let id = count; id >= from; id--) {
       const offers = await market.getOffers(id);
@@ -424,6 +445,7 @@ app.get("/api/history/:userId", async (req, res) => {
       const state = Number(l.state);
       const decided = state >= 2;
       const won = decided && Number(l.winnerIndex) === idx;
+      const txHash = winners[String(id)] || null;
       items.push({
         listingId: String(id),
         itemName: l.itemName,
@@ -433,10 +455,49 @@ app.get("/api/history/:userId", async (req, res) => {
         decided,
         won,
         finalPriceMcop: won ? fmt(l.finalPrice) : null,
+        reasoning: decided ? l.reasoning || null : null,
+        txHash,
+        explorerUrl: won && txHash ? `${MONAD_EXPLORER}/tx/${txHash}` : null,
       });
     }
     const data = { address: addr, items };
     historyCache.set(addr.toLowerCase(), { ts: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Seller view — all recent deals and what they sold for (on-chain).
+let listingsCache = null;
+app.get("/api/listings", async (_req, res) => {
+  try {
+    if (listingsCache && Date.now() - listingsCache.ts < 8000) return res.json(listingsCache.data);
+    const count = Number(await market.listingCount());
+    const from = Math.max(1, count - 25);
+    const winners = loadWinners();
+    const out = [];
+    for (let id = count; id >= from; id--) {
+      const l = await market.getListing(id);
+      const offerCount = Number(await market.getOfferCount(id));
+      const state = Number(l.state);
+      const txHash = winners[String(id)] || null;
+      out.push({
+        listingId: String(id),
+        itemName: l.itemName,
+        state, // 1 open, 2 decided, 3 revealed, 4 cancelled
+        offerCount,
+        deadline: Number(l.deadline),
+        finalPriceMcop: state >= 2 ? fmt(l.finalPrice) : null,
+        revealedReserveMcop: state >= 3 ? fmt(l.revealedReserve) : null,
+        marginMcop: state >= 3 ? fmt(l.finalPrice - l.revealedReserve) : null,
+        reasoning: state >= 2 ? l.reasoning || null : null,
+        txHash,
+        explorerUrl: txHash ? `${MONAD_EXPLORER}/tx/${txHash}` : null,
+      });
+    }
+    const data = { listings: out, market: MARKET_ADDRESS };
+    listingsCache = { ts: Date.now(), data };
     res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
