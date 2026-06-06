@@ -37,6 +37,33 @@ function Confetti() {
   );
 }
 
+// Plays the seller-agent ↔ buyer-agents negotiation line by line.
+function Negotiation({ dialogue = [], reasoning, t }) {
+  const [shown, setShown] = useState(1);
+  useEffect(() => {
+    if (shown >= dialogue.length) return;
+    const id = setTimeout(() => setShown((s) => s + 1), 2200);
+    return () => clearTimeout(id);
+  }, [shown, dialogue.length]);
+  const allShown = shown >= dialogue.length;
+  return (
+    <div className="negotiation">
+      <div className="kicker">🤝 {t("negotiation")}</div>
+      <div className="nego-feed">
+        {dialogue.slice(0, shown).map((d, i) => (
+          <div key={i} className={`nego-line ${d.role === "seller" ? "seller" : "buyer"}`}>
+            <div className="nego-who">
+              {d.role === "seller" ? `🏷️ ${t("sellerAgent")}` : `🧑 ${d.who || t("buyerAgent")}`}
+            </div>
+            <div className="nego-bubble">{d.text}</div>
+          </div>
+        ))}
+      </div>
+      {allShown && reasoning && <div className="nego-verdict">⚖️ {reasoning}</div>}
+    </div>
+  );
+}
+
 export default function Arena() {
   const { t } = useTranslation();
   const { itemName, deadline, offers, phase, agent, reveal, PHASES } = useArena();
@@ -166,14 +193,19 @@ export default function Arena() {
 
       {phase === PHASES.REASONING && (
         <div className="overlay">
-          <div className="reasoning-panel">
-            <div className="kicker">🤖 {t("agentReasoning")}</div>
-            {agent?.noOffers ? (
+          {agent?.noOffers ? (
+            <div className="reasoning-panel">
+              <div className="kicker">🤖 {t("agentReasoning")}</div>
               <div className="text">{t("noOffers")}</div>
-            ) : (
+            </div>
+          ) : agent?.dialogue?.length ? (
+            <Negotiation dialogue={agent.dialogue} reasoning={agent.reasoning} t={t} />
+          ) : (
+            <div className="reasoning-panel">
+              <div className="kicker">🤖 {t("agentReasoning")}</div>
               <div className="text typewriter">{typed}</div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 

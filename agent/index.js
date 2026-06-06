@@ -40,8 +40,10 @@ const market = new ethers.Contract(MARKET_ADDRESS, ABI, wallet);
 
 const ONE = 10n ** 18n;
 // Pause on the "deliberating" screen (offers revealed) before deciding, so the
-// crowd can read every pitch. Tune with DELIBERATION_MS.
-const DELIBERATION_MS = Number(process.env.DELIBERATION_MS || 9000);
+// crowd can read every pitch. Then the negotiation dialogue plays out, paced so
+// each line is readable, before the winner is executed on-chain.
+const DELIBERATION_MS = Number(process.env.DELIBERATION_MS || 3500);
+const DIALOGUE_PACE_MS = Number(process.env.DIALOGUE_PACE_MS || 2200);
 const fmt = (wei) => ethers.formatEther(wei);
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const scheduled = new Set();
@@ -131,7 +133,12 @@ async function evaluate(listingId) {
     maxBudgetMcop: fmt(winnerMaxWei),
     savingsMcop: fmt(savingsWei),
     reasoning: decision.reasoning,
+    dialogue: decision.dialogue,
   });
+
+  // Let the negotiation play out on the feed before announcing the winner.
+  const playMs = (decision.dialogue?.length || 0) * DIALOGUE_PACE_MS + 1500;
+  if (playMs > 0) await new Promise((r) => setTimeout(r, playMs));
 
   try {
     const tx = await agentSend((nonce) =>
@@ -162,12 +169,14 @@ Hay ${offers.length} compradores. Cada uno indicó su presupuesto MÁXIMO (en MO
 Compradores:
 ${offers.map((o) => `#${o.index} — máx ${o.maxBudget} MONADCOP — "${o.request}" (${o.buyer})`).join("\n")}
 
+Además, dramatiza la NEGOCIACIÓN: una conversación corta (5 a 8 turnos) entre el "agente del vendedor" (quiere buen precio para el vendedor) y los "agentes de cada comprador" (defienden la historia y el presupuesto de su comprador y regatean). Debe sentirse viva, en español, y terminar cerrando el trato con el ganador en finalPrice. A cada comprador dale una etiqueta corta y evocadora según su historia (ej: "El de la abuela coleccionista").
+
 Responde ÚNICAMENTE con JSON válido, sin texto extra:
-{"winnerIndex": <entero>, "finalPrice": <entero MONADCOP ≤ presupuesto del ganador>, "reasoning": "<2-3 frases en español: por qué ganó y por qué ese precio; menciona cuánto ahorró>"}`;
+{"winnerIndex": <entero>, "finalPrice": <entero MONADCOP ≤ presupuesto del ganador>, "reasoning": "<2-3 frases en español: por qué ganó y por qué ese precio; menciona cuánto ahorró>", "dialogue": [{"role":"seller","text":"..."}, {"role":"buyer","who":"<etiqueta corta>","text":"..."}, ...]}`;
 
   let parsed = null;
   try {
-    const text = await llm.complete(prompt, { maxTokens: 600 });
+    const text = await llm.complete(prompt, { maxTokens: 1200 });
     parsed = llm.extractJson(text);
   } catch (e) {
     // LLM unreachable/invalid — fall through to the deterministic fallback below
@@ -191,7 +200,27 @@ Responde ÚNICAMENTE con JSON válido, sin texto extra:
   const reasoning =
     (parsed?.reasoning && String(parsed.reasoning).slice(0, 240)) ||
     `Seleccionado por su historia y disposición a pagar; precio negociado en ${finalPrice} MONADCOP.`;
-  return { winnerIndex, finalPrice, reasoning };
+
+  // Negotiation transcript for the on-screen drama.
+  let dialogue = Array.isArray(parsed?.dialogue)
+    ? parsed.dialogue
+        .filter((d) => d && d.text)
+        .map((d) => ({
+          role: d.role === "seller" ? "seller" : "buyer",
+          who: d.who ? String(d.who).slice(0, 40) : null,
+          text: String(d.text).slice(0, 220),
+        }))
+        .slice(0, 10)
+    : [];
+  if (dialogue.length === 0) {
+    const w = offers[winnerIndex];
+    dialogue = [
+      { role: "seller", who: null, text: `${itemName}: abrimos en ${winnerMax} MONADCOP.` },
+      { role: "buyer", who: w.buyer, text: `Mi comprador lo merece: "${String(w.request).slice(0, 110)}". Ofrece hasta ${w.maxBudget}.` },
+      { role: "seller", who: null, text: `Buen argumento. Cerramos en ${finalPrice} MONADCOP.` },
+    ];
+  }
+  return { winnerIndex, finalPrice, reasoning, dialogue };
 }
 
 function schedule(listingId, deadlineSec) {

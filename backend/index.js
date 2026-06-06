@@ -102,6 +102,36 @@ async function treasurySendRetry(buildFn, label, attempts = 7) {
   throw lastErr || new Error(`${label} failed`);
 }
 
+// ── Participant tracking (for result DMs) ───────────────────────────────────
+const participants = new Map(); // listingId -> [{ userId, address }]
+const itemNames = new Map(); // listingId -> itemName
+let bot = null; // set up at the bottom; referenced by the winner handler
+
+async function sendResultDMs(listingId, winnerAddr, finalMcop, savingsMcop, explorerUrl) {
+  if (!bot) return;
+  const parts = participants.get(String(listingId)) || [];
+  const item = itemNames.get(String(listingId)) || "el artículo";
+  const win = (winnerAddr || "").toLowerCase();
+  for (const { userId, address } of parts) {
+    if (!String(userId).startsWith("tg-")) continue; // only Telegram users
+    const chatId = String(userId).slice(3);
+    const won = (address || "").toLowerCase() === win;
+    const text = won
+      ? `🏆 *¡GANASTE!* — ${item}\n\nTu agente cerró el trato en *${finalMcop} MONADCOP* (te ahorró ${savingsMcop}). ¡El balón es tuyo! ⚽`
+      : `Esta vez no ganaste *${item}*. El ganador pagó ${finalMcop} MONADCOP.\n\nTus 50.000 MONADCOP siguen intactos para la próxima 💪`;
+    try {
+      await bot.telegram.sendMessage(chatId, text, {
+        parse_mode: "Markdown",
+        ...(won && explorerUrl
+          ? { reply_markup: { inline_keyboard: [[{ text: "Ver en el explorador ↗", url: explorerUrl }]] } }
+          : {}),
+      });
+    } catch (e) {
+      console.warn(`DM to ${userId} failed:`, e.message);
+    }
+  }
+}
+
 // ── WebSocket fan-out ───────────────────────────────────────────────────────
 const arenaLog = new Map();
 function record(id, e) {
@@ -130,6 +160,7 @@ startEventPoller({
   handlers: {
     ListingCreated: (a, log) => {
       console.log(`ListingCreated #${a.listingId} "${a.itemName}"`);
+      itemNames.set(String(a.listingId), a.itemName);
       emit({
         type: "listing_created",
         listingId: String(a.listingId),
@@ -154,6 +185,7 @@ startEventPoller({
     },
     WinnerChosen: (a, log) => {
       console.log(`WinnerChosen listing ${a.listingId} -> #${a.winnerIndex} price=${fmt(a.finalPrice)}`);
+      const explorerUrl = log.transactionHash ? `${MONAD_EXPLORER}/tx/${log.transactionHash}` : null;
       emit({
         type: "winner_chosen",
         listingId: String(a.listingId),
@@ -164,8 +196,10 @@ startEventPoller({
         savingsMcop: fmt(a.savings),
         reasoning: a.reasoning,
         txHash: log.transactionHash,
-        explorerUrl: log.transactionHash ? `${MONAD_EXPLORER}/tx/${log.transactionHash}` : null,
+        explorerUrl,
       });
+      // Notify every participant of their result in Telegram.
+      sendResultDMs(a.listingId, a.winner, fmt(a.finalPrice), fmt(a.savings), explorerUrl);
     },
     ReserveRevealed: (a, log) => {
       console.log(`ReserveRevealed listing ${a.listingId} reserve=${fmt(a.reserve)}`);
@@ -330,6 +364,13 @@ app.post("/api/offer", async (req, res) => {
     await apTx.wait();
     const offTx = await uMarket.submitOffer(listingId, maxBudgetWei, text, { gasLimit: 700000n });
 
+    // Remember who participated so we can DM them their result.
+    const lk = String(listingId);
+    if (!participants.has(lk)) participants.set(lk, []);
+    if (!participants.get(lk).some((p) => p.userId === userId)) {
+      participants.get(lk).push({ userId, address: addr });
+    }
+
     console.log(`offer: ${addr} listing ${listingId} max=${maxBudgetInt} tx=${offTx.hash}`);
     res.json({ ok: true, txHash: offTx.hash, maxBudget: maxBudgetInt });
     // OfferSubmitted event will broadcast on confirm.
@@ -404,7 +445,7 @@ server.listen(Number(PORT), async () => {
 
 // ── Telegram bot ────────────────────────────────────────────────────────────
 if (TELEGRAM_BOT_TOKEN && WEBAPP_URL) {
-  const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+  bot = new Telegraf(TELEGRAM_BOT_TOKEN);
   const welcome = (ctx) =>
     ctx.reply(
       "🛒 *KICKOFF* — el marketplace donde tu agente negocia por ti.\n\n" +
