@@ -611,6 +611,134 @@ body {
   to { transform: translateY(120vh) rotate(720deg); opacity: 0.9; }
 }
 
+/* Floating operator control on the arena */
+.op-fab {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 60;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 22px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+.op-fab:hover {
+  opacity: 1;
+}
+.op-panel {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 70;
+  width: 340px;
+  max-width: 92vw;
+  background: var(--card);
+  border: 1px solid rgba(131, 110, 249, 0.4);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.op-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.op-x {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 24px;
+  cursor: pointer;
+  line-height: 1;
+}
+.op-lbl {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-top: 4px;
+}
+.op-input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 9px 11px;
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
+.op-input:focus {
+  border-color: var(--purple);
+}
+.op-row {
+  display: flex;
+  gap: 10px;
+}
+.op-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.op-preset {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 0;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+}
+.op-preset.on {
+  background: var(--purple);
+  border-color: var(--purple);
+}
+.op-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.op-btn {
+  flex: 1;
+  border: none;
+  border-radius: 12px;
+  padding: 12px;
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  color: #fff;
+}
+.op-btn.start {
+  background: linear-gradient(90deg, var(--purple), var(--purple-bright));
+}
+.op-btn.reveal {
+  background: rgba(255, 209, 102, 0.18);
+  color: var(--gold);
+  border: 1px solid rgba(255, 209, 102, 0.4);
+}
+.op-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.op-msg {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+}
+
 /* On-chain tx ticker (bottom of arena) */
 .arena-txbar {
   margin-top: 14px;

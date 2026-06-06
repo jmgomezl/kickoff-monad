@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { QRCodeSVG } from "qrcode.react";
 import LangToggle from "../components/LangToggle.jsx";
 import PixelAvatar from "../components/PixelAvatar.jsx";
+import ArenaControls from "../components/ArenaControls.jsx";
 import { useArena } from "../useArena.js";
 import { BOT_URL, explorerTx } from "../config.js";
 
@@ -86,7 +87,7 @@ function Negotiation({ dialogue = [], reasoning, t }) {
 
 export default function Arena() {
   const { t } = useTranslation();
-  const { itemName, deadline, offers, phase, agent, reveal, txs, PHASES } = useArena();
+  const { listingId, itemName, deadline, offers, phase, agent, reveal, txs, PHASES } = useArena();
   const { secs } = useCountdown(deadline);
 
   const reasoning = agent?.reasoning || "";
@@ -115,6 +116,7 @@ export default function Arena() {
   return (
     <div className="arena">
       <LangToggle />
+      <ArenaControls listingId={listingId} />
       <div className="arena-top">
         <div>
           <div className="brand">
