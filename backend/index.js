@@ -741,18 +741,22 @@ server.listen(Number(PORT), async () => {
 // ── Telegram bot ────────────────────────────────────────────────────────────
 if (TELEGRAM_BOT_TOKEN && WEBAPP_URL) {
   bot = new Telegraf(TELEGRAM_BOT_TOKEN);
+  // Big, full-width CTA button inside the message (much more visible than the
+  // small corner menu button) + a persistent keyboard button above the input.
+  const openBtn = Markup.button.webApp("⚽  ABRIR KICKOFF — hacer mi oferta", WEBAPP_URL);
   const welcome = (ctx) =>
-    ctx.reply(
-      "🛒 *KICKOFF* — el marketplace donde tu agente negocia por ti.\n\n" +
-        "Recibes *50.000 MONADCOP* gratis. Describe qué quieres comprar y por qué — un agente de IA decidirá el ganador en vivo sobre Monad.",
-      {
-        parse_mode: "Markdown",
-        ...Markup.keyboard([[Markup.button.webApp("🛒 Abrir kickoff", WEBAPP_URL)]]).resize(),
-      }
-    );
+    ctx
+      .reply(
+        "🛒 *KICKOFF* — el marketplace donde tu agente negocia por ti.\n\n" +
+          "Recibes *50.000 MONADCOP* gratis. Describe qué quieres comprar y por qué — un agente de IA decidirá el ganador en vivo sobre Monad.\n\n" +
+          "👇 Toca el botón grande para abrir la app:",
+        { parse_mode: "Markdown", ...Markup.inlineKeyboard([[openBtn]]) }
+      )
+      .catch(() => {});
   bot.start(welcome);
   bot.command("comprar", welcome);
-  bot.hears(/hola|hi|hello|start|comprar/i, welcome);
+  // Any message (greeting, random text) → show the big button again.
+  bot.on("message", welcome);
   bot.launch().then(() => console.log("Telegram bot launched. WebApp:", WEBAPP_URL));
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));
