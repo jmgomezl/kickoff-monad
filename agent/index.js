@@ -48,6 +48,26 @@ const fmt = (wei) => ethers.formatEther(wei);
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const scheduled = new Set();
 
+// Seller attitudes — set per deal by the operator; steer winner, price and tone.
+const ATTITUDES = {
+  humano:
+    "El vendedor es DE CORAZÓN: prioriza fuertemente la historia humana y la necesidad real; está dispuesto a ceder precio por una buena causa. Elige con empatía y negocia un precio GENEROSO (más bajo) para el ganador. Tono cálido, humano y emotivo.",
+  equilibrado:
+    "El vendedor es EQUILIBRADO: pondera por igual el precio y la historia; busca un trato justo, ni regala ni exprime. Tono profesional pero amable.",
+  agresivo:
+    "El vendedor es AGRESIVO y orientado a GANANCIA: prioriza el precio más alto posible; la historia importa poco; favorece la oferta más alta y negocia DURO para maximizar el precio final. Tono firme, comercial y exigente.",
+};
+function readAttitude(listingId) {
+  try {
+    const a = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "..", "deploy", "attitudes.json"), "utf8")
+    );
+    return a[String(listingId)] || "equilibrado";
+  } catch (_) {
+    return "equilibrado";
+  }
+}
+
 // Serialize the agent's own txs (multiple listings can close together).
 let _aNonce = null;
 let _aQueue = Promise.resolve();
@@ -113,7 +133,9 @@ async function evaluate(listingId) {
   // Deliberation beat: offers are now revealed on the feed; let the crowd read.
   if (DELIBERATION_MS > 0) await new Promise((r) => setTimeout(r, DELIBERATION_MS));
 
-  const decision = await askClaude(l.itemName, list);
+  const attitude = readAttitude(listingId);
+  console.log(`  seller attitude: ${attitude}`);
+  const decision = await askClaude(l.itemName, list, attitude);
   const winnerIndex = decision.winnerIndex;
   const winnerMaxWei = offers[winnerIndex].maxBudget;
   let finalWei = BigInt(Math.max(1, Math.round(decision.finalPrice))) * ONE;
@@ -157,10 +179,13 @@ async function evaluate(listingId) {
   }
 }
 
-async function askClaude(itemName, offers) {
+async function askClaude(itemName, offers, attitude = "equilibrado") {
+  const attitudeText = ATTITUDES[attitude] || ATTITUDES.equilibrado;
   const prompt = `Eres un agente de IA que actúa como intermediario en un marketplace P2P en vivo sobre Monad (estilo Mercado Libre, pero las decisiones las toma un agente).
 
 Artículo en venta: "${itemName}".
+
+ACTITUD DEL VENDEDOR (respétala al elegir ganador, al fijar el precio final y en el TONO de la negociación): ${attitudeText}
 
 Hay ${offers.length} compradores. Cada uno indicó su presupuesto MÁXIMO (en MONADCOP) y escribió por qué lo quiere. Tu trabajo:
 1) Elegir UN ganador. Pondera la disposición a pagar (presupuesto) PERO TAMBIÉN la calidad humana, la sinceridad y la necesidad real del mensaje. Una historia genuina y conmovedora puede ganarle a una oferta más alta pero fría.

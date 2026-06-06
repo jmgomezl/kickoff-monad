@@ -87,8 +87,9 @@ function Negotiation({ dialogue = [], reasoning, t }) {
 
 export default function Arena() {
   const { t } = useTranslation();
-  const { listingId, itemName, deadline, offers, phase, agent, reveal, txs, replaying, PHASES } =
+  const { listingId, itemName, deadline, offers, phase, agent, reveal, attitude, txs, replaying, PHASES } =
     useArena();
+  const ATT_KEY = { humano: "attHumano", equilibrado: "attEquilibrado", agresivo: "attAgresivo" };
   const { secs } = useCountdown(deadline);
 
   const reasoning = agent?.reasoning || "";
@@ -155,6 +156,9 @@ export default function Arena() {
           <div className="prize-card">
             <div className="label">{t("onSale")}</div>
             <div className="name">{itemName || "—"}</div>
+            {attitude && ATT_KEY[attitude] && (
+              <div className="att-badge">{t("opAttitude")}: {t(ATT_KEY[attitude])}</div>
+            )}
             <div className="prize-emoji">⚽</div>
             <div className="timer">
               <div className="row">

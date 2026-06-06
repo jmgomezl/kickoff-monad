@@ -22,6 +22,7 @@ export function useArena() {
   const [phase, setPhase] = useState(PHASES.WAITING);
   const [agent, setAgent] = useState(null);
   const [reveal, setReveal] = useState(null);
+  const [attitude, setAttitude] = useState(null);
   const [txs, setTxs] = useState([]);
   const [replaying, setReplaying] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -46,6 +47,7 @@ export function useArena() {
         setListingId(e.listingId);
         setItemName(e.itemName);
         setDeadline(e.deadline);
+        setAttitude(e.attitude || null);
         setOffers([]);
         setAgent(null);
         setReveal(null);
@@ -113,6 +115,7 @@ export function useArena() {
         setListingId(snap.listingId);
         setItemName(snap.itemName);
         setDeadline(snap.deadline);
+        setAttitude(snap.attitude || null);
         const offerVMs = (snap.offers || []).map((o) => ({
           type: "offer_submitted",
           offerIndex: o.index,
@@ -223,5 +226,5 @@ export function useArena() {
     };
   }, [apply]);
 
-  return { listingId, itemName, deadline, offers, phase, agent, reveal, txs, replaying, connected, PHASES };
+  return { listingId, itemName, deadline, offers, phase, agent, reveal, attitude, txs, replaying, connected, PHASES };
 }

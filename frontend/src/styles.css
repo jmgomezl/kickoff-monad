@@ -106,9 +106,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 91, 110, 0.12);
-  color: var(--danger);
-  border: 1px solid rgba(255, 91, 110, 0.4);
+  background: rgba(47, 230, 160, 0.12);
+  color: var(--green);
+  border: 1px solid rgba(47, 230, 160, 0.4);
   padding: 6px 14px;
   border-radius: 999px;
   font-weight: 800;
@@ -119,7 +119,7 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--danger);
+  background: var(--green);
   animation: pulse 1.2s ease-in-out infinite;
 }
 @keyframes pulse {
@@ -188,6 +188,17 @@ body {
   font-weight: 700;
   margin-top: 8px;
   line-height: 1.1;
+}
+.att-badge {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: clamp(12px, 1.1vw, 16px);
+  font-weight: 700;
+  color: var(--gold);
+  background: rgba(255, 209, 102, 0.12);
+  border: 1px solid rgba(255, 209, 102, 0.35);
+  padding: 5px 12px;
+  border-radius: 999px;
 }
 .prize-emoji {
   font-size: clamp(48px, 5vw, 80px);
@@ -737,6 +748,15 @@ body {
   font-size: 13px;
   color: var(--text);
   text-align: center;
+}
+.op-sales {
+  display: block;
+  margin-top: 12px;
+  text-align: center;
+  color: var(--purple-bright);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 /* On-chain tx ticker (bottom of arena) */

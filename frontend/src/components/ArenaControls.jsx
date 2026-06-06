@@ -11,6 +11,7 @@ export default function ArenaControls({ listingId }) {
   const [itemName, setItemName] = useState("Balón oficial Monad Blitz");
   const [reserve, setReserve] = useState(15000);
   const [duration, setDuration] = useState(90);
+  const [attitude, setAttitude] = useState("equilibrado");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -44,6 +45,7 @@ export default function ArenaControls({ listingId }) {
       itemName,
       reserveMcop: String(reserve),
       durationSec: Number(duration),
+      attitude,
     });
     if (d) setMsg(`✅ Trato #${d.listingId} · ${d.durationSec}s`);
   }
@@ -116,6 +118,23 @@ export default function ArenaControls({ listingId }) {
         ))}
       </div>
 
+      <label className="op-lbl">{t("opAttitude")}</label>
+      <div className="op-presets">
+        {[
+          ["humano", t("attHumano")],
+          ["equilibrado", t("attEquilibrado")],
+          ["agresivo", t("attAgresivo")],
+        ].map(([k, label]) => (
+          <button
+            key={k}
+            className={`op-preset ${attitude === k ? "on" : ""}`}
+            onClick={() => setAttitude(k)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="op-actions">
         <button className="op-btn start" disabled={busy || !token} onClick={start}>
           ▶️ {t("opStart")}
@@ -125,6 +144,9 @@ export default function ArenaControls({ listingId }) {
         </button>
       </div>
       {msg && <div className="op-msg">{msg}</div>}
+      <a className="op-sales" href="/seller" target="_blank" rel="noreferrer">
+        {t("opSales")}
+      </a>
     </div>
   );
 }

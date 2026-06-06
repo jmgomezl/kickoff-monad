@@ -99,6 +99,20 @@ function saveReasonings(r) {
   fs.mkdirSync(path.dirname(REASONINGS_FILE), { recursive: true });
   fs.writeFileSync(REASONINGS_FILE, JSON.stringify(r, null, 2));
 }
+
+// Seller attitude per listing (humano | equilibrado | agresivo) — read by the agent.
+const ATTITUDES_FILE = path.join(__dirname, "..", "deploy", "attitudes.json");
+function loadAttitudes() {
+  try {
+    return JSON.parse(fs.readFileSync(ATTITUDES_FILE, "utf8"));
+  } catch (_) {
+    return {};
+  }
+}
+function saveAttitudes(a) {
+  fs.mkdirSync(path.dirname(ATTITUDES_FILE), { recursive: true });
+  fs.writeFileSync(ATTITUDES_FILE, JSON.stringify(a, null, 2));
+}
 const agentAddress = AGENT_ADDRESS || (treasury ? treasury.address : ethers.ZeroAddress);
 
 const hasLlm = llm.provider() !== "none";
@@ -241,6 +255,7 @@ startEventPoller({
         agent: a.agent,
         itemName: a.itemName,
         deadline: Number(a.deadline),
+        attitude: loadAttitudes()[String(a.listingId)] || null,
         txHash: log.transactionHash,
       });
     },
@@ -345,6 +360,8 @@ app.post("/api/admin/create-listing", async (req, res) => {
     const itemName = String(req.body?.itemName || "Balón oficial Monad Blitz").slice(0, 80);
     const reserveMcop = String(req.body?.reserveMcop ?? "15000");
     const durationSec = Math.max(15, Math.min(3600, Number(req.body?.durationSec || 90)));
+    const validAtt = ["humano", "equilibrado", "agresivo"];
+    const attitude = validAtt.includes(req.body?.attitude) ? req.body.attitude : "equilibrado";
     const reserve = ethers.parseEther(reserveMcop);
     const salt = ethers.hexlify(ethers.randomBytes(32));
     const commit = ethers.solidityPackedKeccak256(["uint256", "bytes32"], [reserve, salt]);
@@ -378,9 +395,12 @@ app.post("/api/admin/create-listing", async (req, res) => {
     const reveals = loadReveals();
     reveals[listingId] = { reserve: reserve.toString(), reserveMcop, salt };
     saveReveals(reveals);
+    const atts = loadAttitudes();
+    atts[listingId] = attitude;
+    saveAttitudes(atts);
 
-    console.log(`admin: created listing ${listingId} "${itemName}" ${durationSec}s tx ${tx.hash}`);
-    res.json({ ok: true, listingId, deadline, durationSec, reserveMcop, txHash: tx.hash });
+    console.log(`admin: created listing ${listingId} "${itemName}" ${durationSec}s [${attitude}] tx ${tx.hash}`);
+    res.json({ ok: true, listingId, deadline, durationSec, reserveMcop, attitude, txHash: tx.hash });
   } catch (e) {
     console.error("admin create-listing failed:", e.message);
     res.status(500).json({ error: e.shortMessage || e.message });
@@ -644,6 +664,7 @@ app.get("/api/listing/:id", async (req, res) => {
       finalPriceMcop: fmt(l.finalPrice),
       revealedReserveMcop: fmt(l.revealedReserve),
       reasoning: l.reasoning,
+      attitude: loadAttitudes()[String(id)] || null,
       offers: offers.map((o, i) => ({
         index: i,
         buyer: o.buyer,
