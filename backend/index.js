@@ -105,6 +105,15 @@ const hasLlm = llm.provider() !== "none";
 const fmt = (wei) => ethers.formatEther(wei);
 const ONE = 10n ** 18n;
 
+// Reject if a promise doesn't settle in time — keeps a flaky RPC call from
+// wedging the serialized treasury queue forever.
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timeout`)), ms)),
+  ]);
+}
+
 // Read-call with retry — Monad's public RPC intermittently drops view calls.
 async function rcall(fn, attempts = 3) {
   let last;
@@ -125,12 +134,18 @@ async function rcall(fn, attempts = 3) {
 let _tNonce = null;
 let _tQueue = Promise.resolve();
 async function nextTreasuryNonce() {
-  const chain = await provider.getTransactionCount(treasury.address, "pending");
+  const chain = await withTimeout(
+    provider.getTransactionCount(treasury.address, "pending"),
+    8000,
+    "nonce-fetch"
+  );
   if (_tNonce === null || chain > _tNonce) _tNonce = chain;
   return _tNonce++;
 }
 function treasuryTx(fn) {
-  const run = async () => fn(await nextTreasuryNonce());
+  // Bound both the nonce fetch and the broadcast so one stuck RPC call can never
+  // block the queue for the next operation.
+  const run = async () => withTimeout(fn(await nextTreasuryNonce()), 25000, "treasury-send");
   const p = _tQueue.then(run, run);
   _tQueue = p.catch(() => {});
   return p;
@@ -342,15 +357,23 @@ app.post("/api/admin/create-listing", async (req, res) => {
         gasLimit: 400000n,
       })
     );
-    const receipt = await tx.wait();
     let listingId = null;
-    for (const lg of receipt.logs) {
-      try {
-        const p = market.interface.parseLog(lg);
-        if (p?.name === "ListingCreated") listingId = p.args.listingId.toString();
-      } catch (_) {}
+    try {
+      const receipt = await withTimeout(tx.wait(), 25000, "createListing-wait");
+      for (const lg of receipt.logs) {
+        try {
+          const p = market.interface.parseLog(lg);
+          if (p?.name === "ListingCreated") listingId = p.args.listingId.toString();
+        } catch (_) {}
+      }
+    } catch (_) {
+      /* slow confirm — fall back to the on-chain count below */
     }
-    if (listingId == null) listingId = (await market.listingCount()).toString();
+    if (listingId == null) {
+      await new Promise((r) => setTimeout(r, 1500));
+      listingId = (await rcall(() => market.listingCount())).toString();
+    }
+    activeCache = null; // force a fresh /api/active so clients see it immediately
 
     const reveals = loadReveals();
     reveals[listingId] = { reserve: reserve.toString(), reserveMcop, salt };
