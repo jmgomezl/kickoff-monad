@@ -85,6 +85,20 @@ function saveWinners(w) {
   fs.mkdirSync(path.dirname(WINNERS_FILE), { recursive: true });
   fs.writeFileSync(WINNERS_FILE, JSON.stringify(w, null, 2));
 }
+
+// Agent reasoning + negotiation dialogue (persisted) so replays survive restarts.
+const REASONINGS_FILE = path.join(__dirname, "..", "deploy", "reasonings.json");
+function loadReasonings() {
+  try {
+    return JSON.parse(fs.readFileSync(REASONINGS_FILE, "utf8"));
+  } catch (_) {
+    return {};
+  }
+}
+function saveReasonings(r) {
+  fs.mkdirSync(path.dirname(REASONINGS_FILE), { recursive: true });
+  fs.writeFileSync(REASONINGS_FILE, JSON.stringify(r, null, 2));
+}
 const agentAddress = AGENT_ADDRESS || (treasury ? treasury.address : ethers.ZeroAddress);
 
 const hasLlm = llm.provider() !== "none";
@@ -383,6 +397,12 @@ app.post("/agent/event", (req, res) => {
   const e = req.body || {};
   if (!e.type) return res.status(400).json({ error: "missing type" });
   emit(e);
+  // Persist the reasoning + dialogue so a replay survives a backend restart.
+  if (e.type === "agent_reasoning" && e.listingId) {
+    const store = loadReasonings();
+    store[String(e.listingId)] = e;
+    saveReasonings(store);
+  }
   res.json({ ok: true });
 });
 
@@ -608,12 +628,22 @@ app.get("/api/listing/:id", async (req, res) => {
         request: o.request,
         timestamp: Number(o.timestamp),
       })),
-      log: arenaLog.get(String(id)) || [],
+      log: mergedLog(id),
     });
   } catch (e) {
     res.status(404).json({ error: e.message });
   }
 });
+
+// In-memory event log + the persisted reasoning (so replays survive restarts).
+function mergedLog(id) {
+  let log = arenaLog.get(String(id)) || [];
+  if (!log.some((x) => x.type === "agent_reasoning")) {
+    const stored = loadReasonings()[String(id)];
+    if (stored) log = [...log, stored];
+  }
+  return log;
+}
 
 app.get("/api/active", async (_req, res) => {
   try {

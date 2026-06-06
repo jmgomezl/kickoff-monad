@@ -16,6 +16,7 @@ deploy/kms.json
 deploy/local-master.key
 deploy/reveals.json
 deploy/winners.json
+deploy/reasonings.json
 
 # hardhat
 artifacts/
