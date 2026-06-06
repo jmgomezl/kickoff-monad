@@ -659,9 +659,12 @@ app.get("/api/active", async (_req, res) => {
         deadline: Number(top.deadline),
       };
     }
+    const nowSec = Math.floor(Date.now() / 1000);
     for (let id = count; id >= Math.max(1, count - 12); id--) {
       const l = await rcall(() => market.getListing(id));
-      if (Number(l.state) === 1) {
+      // Active = open AND still within its window (expired-but-unclosed listings
+      // are not a real sale, so the Mini App shows "no active sale").
+      if (Number(l.state) === 1 && Number(l.deadline) > nowSec) {
         active = { listingId: String(id), itemName: l.itemName, deadline: Number(l.deadline) };
         break;
       }

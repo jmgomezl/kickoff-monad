@@ -275,6 +275,8 @@ export default function Offer() {
 
       {!listing ? (
         <div className="center-screen">{t("noActiveArena")}</div>
+      ) : closed ? (
+        <div className="center-screen">{t("dealClosed")}</div>
       ) : (
         <form className="offer-form chat" onSubmit={submit}>
           <label className="chat-title">{t("describeTitle")}</label>
