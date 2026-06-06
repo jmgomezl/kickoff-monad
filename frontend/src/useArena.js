@@ -99,7 +99,13 @@ export function useArena() {
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/active`).then((x) => x.json());
-        const targetId = r.active?.listingId || r.latest?.listingId;
+        const now = Math.floor(Date.now() / 1000);
+        // Prefer a genuinely-live deal (deadline ahead); otherwise the latest one
+        // (so a finished deal replays instead of a stale empty open listing).
+        let targetId;
+        if (r.active && r.active.deadline > now) targetId = r.active.listingId;
+        else if (r.latest) targetId = r.latest.listingId;
+        else targetId = r.active?.listingId;
         if (cancelled || !targetId) return;
         const snap = await fetch(`${BACKEND_URL}/api/listing/${targetId}`).then((x) => x.json());
         if (cancelled || !snap?.listingId) return;
