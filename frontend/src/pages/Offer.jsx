@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import WebApp from "@twa-dev/sdk";
 import LangToggle from "../components/LangToggle.jsx";
@@ -22,49 +22,64 @@ function resolveUserId() {
 
 export default function Offer() {
   const { t } = useTranslation();
+  const uid = useMemo(() => resolveUserId(), []);
   const [listing, setListing] = useState(null);
-  const [wallet, setWallet] = useState(null); // {address, balanceMcop}
-  const [joining, setJoining] = useState(true);
+  const [balance, setBalance] = useState(null); // number once known
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  const userId = useRef(null);
 
+  // Telegram init + kick off wallet creation/airdrop + fetch active listing.
   useEffect(() => {
     try {
       WebApp.ready();
       WebApp.expand();
     } catch (_) {}
-    userId.current = resolveUserId();
 
-    (async () => {
-      // Kick off wallet creation + airdrop and active-listing fetch in parallel.
-      const join = fetch(`${BACKEND_URL}/api/join`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ userId: userId.current }),
+    // Fire join (creates wallet + airdrops 50k + gas). Don't block the UI on it —
+    // the balance poll below will surface the balance as soon as funding lands.
+    fetch(`${BACKEND_URL}/api/join`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ userId: uid }),
+    })
+      .then((r) => r.json())
+      .then((w) => {
+        if (w?.balanceMcop != null) setBalance(Number(w.balanceMcop));
       })
-        .then((r) => r.json())
-        .then((w) => setWallet(w))
-        .catch(() => {})
-        .finally(() => setJoining(false));
+      .catch(() => {});
 
-      fetch(`${BACKEND_URL}/api/active`)
-        .then((r) => r.json())
-        .then((r) => setListing(r.active || null))
-        .catch(() => setListing(null));
+    fetch(`${BACKEND_URL}/api/active`)
+      .then((r) => r.json())
+      .then((r) => setListing(r.active || null))
+      .catch(() => setListing(null));
+  }, [uid]);
 
-      await join;
-    })();
-  }, []);
+  // Poll the wallet balance independently of the (slow) join response.
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try {
+        const w = await fetch(`${BACKEND_URL}/api/wallet/${uid}`).then((r) => r.json());
+        if (alive && w?.address && w.balanceMcop != null) setBalance(Number(w.balanceMcop));
+      } catch (_) {}
+    };
+    tick();
+    const id = setInterval(tick, 2500);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [uid]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 500);
     return () => clearInterval(id);
   }, []);
 
+  const ready = balance != null; // wallet funded / balance known
   const secsLeft = listing?.deadline ? Math.max(0, listing.deadline - now) : null;
   const closed = secsLeft === 0;
 
@@ -78,11 +93,7 @@ export default function Offer() {
       const res = await fetch(`${BACKEND_URL}/api/offer`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          userId: userId.current,
-          listingId: listing.listingId,
-          text: text.trim(),
-        }),
+        body: JSON.stringify({ userId: uid, listingId: listing.listingId, text: text.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "failed");
@@ -124,12 +135,16 @@ export default function Offer() {
       </div>
 
       {/* Balance chip */}
-      <div className="balance-chip">
+      <div className={`balance-chip ${ready ? "" : "loading"}`}>
         <span className="coin">🪙</span>
-        <span className="lbl">{t("yourBalance")}</span>
-        <span className="val">
-          {joining ? "…" : Number(wallet?.balanceMcop || 0).toLocaleString()} {t("mcop")}
-        </span>
+        {ready ? (
+          <>
+            <span className="lbl">{t("yourBalance")}</span>
+            <span className="val">{balance.toLocaleString()} {t("mcop")}</span>
+          </>
+        ) : (
+          <span className="lbl pulse">{t("preparingWallet")}</span>
+        )}
       </div>
 
       {listing && (
@@ -142,7 +157,7 @@ export default function Offer() {
       )}
 
       {!listing ? (
-        <div className="center-screen">{joining ? t("preparingWallet") : t("noActiveArena")}</div>
+        <div className="center-screen">{t("noActiveArena")}</div>
       ) : (
         <form className="offer-form chat" onSubmit={submit}>
           <label className="chat-title">{t("describeTitle")}</label>
@@ -163,8 +178,12 @@ export default function Offer() {
 
           {error && <div className="error-text">{error}</div>}
 
-          <button className="btn" type="submit" disabled={submitting || closed || !text.trim()}>
-            {submitting ? t("sending") : `🤖 ${t("send")}`}
+          <button
+            className="btn"
+            type="submit"
+            disabled={submitting || closed || !text.trim() || !ready}
+          >
+            {submitting ? t("sending") : !ready ? t("preparingWallet") : `🤖 ${t("send")}`}
           </button>
         </form>
       )}

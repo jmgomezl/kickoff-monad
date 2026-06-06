@@ -82,7 +82,7 @@ function treasuryTx(fn) {
 // a block with another tx touching the same fresh account. A reverted tx still
 // consumes its nonce, so retrying picks a fresh nonce and a later block, which
 // clears it. Retry on both thrown errors and status-0 receipts.
-async function treasurySendRetry(buildFn, label, attempts = 4) {
+async function treasurySendRetry(buildFn, label, attempts = 7) {
   let lastErr;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -93,7 +93,11 @@ async function treasurySendRetry(buildFn, label, attempts = 4) {
     } catch (e) {
       lastErr = e;
     }
-    if (i < attempts - 1) console.warn(`  ${label} attempt ${i + 1} failed, retrying…`);
+    if (i < attempts - 1) {
+      console.warn(`  ${label} attempt ${i + 1} failed, retrying…`);
+      // Back off so the retry lands in a later block, clearing the same-block conflict.
+      await new Promise((r) => setTimeout(r, 700 + i * 300));
+    }
   }
   throw lastErr || new Error(`${label} failed`);
 }

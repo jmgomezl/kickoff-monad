@@ -693,6 +693,18 @@ form.offer-form {
 .balance-chip .coin {
   font-size: 18px;
 }
+.balance-chip.loading {
+  background: rgba(131, 110, 249, 0.1);
+  border-color: rgba(131, 110, 249, 0.35);
+  color: var(--purple-bright);
+}
+.balance-chip .pulse {
+  animation: chip-pulse 1.2s ease-in-out infinite;
+}
+@keyframes chip-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 
 /* ChatGPT-style offer input */
 .offer-form.chat {
