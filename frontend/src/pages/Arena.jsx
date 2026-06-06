@@ -59,6 +59,8 @@ export default function Arena() {
   }, [phase, reasoning]);
 
   const winnerIndex = agent?.winnerIndex;
+  // Sealed-bid: offers stay hidden until the deal closes and the agent evaluates.
+  const sealed = phase === PHASES.WAITING || phase === PHASES.LIVE;
   const totalSecs = useMemo(() => 90, []);
   const pct = secs != null ? Math.min(100, (secs / totalSecs) * 100) : 0;
   const winnerName = agent?.winner ? short(agent.winner) : "—";
@@ -110,7 +112,10 @@ export default function Arena() {
 
         <div className="offers-col">
           <div className="offers-head">
-            <h2>{t("offersIn")}</h2>
+            <div>
+              <h2>{t("offersIn")}</h2>
+              {sealed && offers.length > 0 && <div className="sealed-hint">{t("offersSealed")}</div>}
+            </div>
             <div className="offers-count">{offers.length}</div>
           </div>
           {offers.length === 0 ? (
@@ -120,6 +125,18 @@ export default function Arena() {
               {offers.map((o, i) => {
                 const isWin =
                   (phase === PHASES.WINNER || phase === PHASES.REVEAL) && i === winnerIndex;
+                // Sealed-bid: hide budget + argument while the deal is open.
+                if (sealed) {
+                  return (
+                    <div key={o.txHash || i} className="offer-card sealed">
+                      <div className="top">
+                        <span className="who">🔒 {t("offerN", { n: i + 1 })}</span>
+                        <span className="amt sealed-amt">≤ ••••</span>
+                      </div>
+                      <div className="arg sealed-text">{t("sealedOffer")}</div>
+                    </div>
+                  );
+                }
                 return (
                   <div key={o.txHash || i} className={`offer-card ${isWin ? "win" : ""}`}>
                     <div className="top">

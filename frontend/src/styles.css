@@ -303,6 +303,29 @@ body {
   font-size: clamp(13px, 1.1vw, 17px);
   line-height: 1.35;
 }
+.sealed-hint {
+  color: var(--purple-bright);
+  font-size: clamp(12px, 1vw, 16px);
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+}
+.offer-card.sealed {
+  border-style: dashed;
+  border-color: rgba(131, 110, 249, 0.4);
+  background: linear-gradient(160deg, rgba(131, 110, 249, 0.08), var(--card));
+}
+.offer-card.sealed .who {
+  color: var(--purple-bright);
+}
+.offer-card .sealed-amt {
+  color: var(--muted) !important;
+  letter-spacing: 3px;
+}
+.offer-card .sealed-text {
+  color: var(--muted);
+  font-style: italic;
+  opacity: 0.8;
+}
 .empty-offers {
   flex: 1;
   display: grid;
