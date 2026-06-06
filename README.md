@@ -43,6 +43,7 @@ the difference is what *their agent saved them*. 0.4s finality, near-zero gas.
 |---|---|---|
 | Token | [`contracts/MONADCOP.sol`](contracts/MONADCOP.sol) | ERC20 play-money, 50k drip per user |
 | Market | [`contracts/KickoffMarket.sol`](contracts/KickoffMarket.sol) | Listings, NL offers, agent-negotiated pricing, reserve reveal |
+| **Agent identity** | [`contracts/AgentIdentityRegistry.sol`](contracts/AgentIdentityRegistry.sol) | **ERC-8004** Identity Registry — the negotiator's on-chain `agentId` + Agent Card |
 | Wallets | [`backend/wallets.js`](backend/wallets.js) | KMS envelope encryption (+ local fallback), custodial wallet per user |
 | Backend | [`backend/index.js`](backend/index.js) | Express + WS, `/api/join` (wallet+airdrop), `/api/offer` (LLM parses budget, custodial sign), Telegram bot |
 | Agent | [`agent/index.js`](agent/index.js) | Scores budget + human story, negotiates final price, `executeWinner` |
@@ -66,10 +67,42 @@ OpenAI / Anthropic SDK · Express + `ws` · Telegraf · React 18 + Vite · i18ne
 |---|---|---|
 | **MONADCOP** (ERC20) | `0xD8E6798331265b46136198b1ECf492Cb84797acD` | [view](https://testnet.monadexplorer.com/address/0xD8E6798331265b46136198b1ECf492Cb84797acD) |
 | **KickoffMarket** | `0xFab111F34cCCBb6212a8788aC322b4A3571072D0` | [view](https://testnet.monadexplorer.com/address/0xFab111F34cCCBb6212a8788aC322b4A3571072D0) |
+| **AgentIdentityRegistry** (ERC-8004) | `0x6766d5068e6a16510ca534BAA6bf024eaB77472C` | [view](https://testnet.monadexplorer.com/address/0x6766d5068e6a16510ca534BAA6bf024eaB77472C) |
 | KickoffArena (v1, superseded) | `0xD95E49E21952d01374440E4CF5cce43d407E927c` | [view](https://testnet.monadexplorer.com/address/0xD95E49E21952d01374440E4CF5cce43d407E927c) |
 
 - **RPC:** `https://testnet-rpc.monad.xyz` · **Explorer:** `https://testnet.monadexplorer.com`
 - **Live app:** https://kickoff.bot · **Big-screen feed:** https://arena.kickoff.bot · **Bot:** [@cryptokickoffbot](https://t.me/cryptokickoffbot)
+
+## Agentic standards — ERC-8004 (Trustless Agents)
+
+The negotiator isn't an anonymous backend script: it has a **real, self-sovereign
+on-chain identity** following [ERC-8004](https://eips.ethereum.org/EIPS/eip-8004),
+the Trustless Agents standard.
+
+- [`AgentIdentityRegistry.sol`](contracts/AgentIdentityRegistry.sol) is a minimal
+  ERC-8004 **Identity Registry** (ERC-721 + URIStorage). Registration is
+  permissionless — any agent can `register(agentURI)` and self-issue an identity;
+  no central party mints or revokes.
+- The kickoff negotiator registered itself **from its own key** (`0x54add8…0B4f`),
+  so it **owns** `agentId #1`. The agent — not the operator — controls its identity.
+- That `agentId`'s `agentURI` resolves to a live **Agent Card** describing the
+  agent's name, capabilities, on-chain identity and supported trust models:
+  **[kickoff.bot/agent-card.json](https://kickoff.bot/agent-card.json)** (also at
+  the well-known path `/.well-known/agent-card.json`). The card's `registrations`
+  block links back to the registry + agentId via CAIP-10, closing the loop:
+  on-chain ID → Agent Card → on-chain ID.
+- It's surfaced in the product too — the arena shows an **`🆔 ERC-8004 · Agente #1`**
+  badge linking to the registry on the explorer.
+
+```solidity
+function register(string agentURI) external returns (uint256 agentId);
+event   Registered(uint256 indexed agentId, string agentURI, address indexed owner);
+function setAgentURI(uint256 agentId, string newURI) external; // agent-only
+function getAgentWallet(uint256 agentId) external view returns (address);
+```
+
+Reputation and Validation registries (the other two ERC-8004 components) are
+out of scope for this deployment; Identity is the foundational primitive.
 
 ## Quick start
 

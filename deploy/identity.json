@@ -1,0 +1,8 @@
+{
+  "chainId": "10143",
+  "network": "monad",
+  "registry": "0x6766d5068e6a16510ca534BAA6bf024eaB77472C",
+  "agentId": "1",
+  "agentURI": "https://kickoff.bot/agent-card.json",
+  "agentAddress": "0x54add870E0D7d4f45c71389a5a3522438c470B4f"
+}

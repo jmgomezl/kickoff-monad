@@ -36,6 +36,10 @@ const {
   TELEGRAM_BOT_TOKEN,
   WEBAPP_URL,
   ADMIN_TOKEN,
+  IDENTITY_REGISTRY,
+  AGENT_ID,
+  MONAD_CHAIN_ID = "10143",
+  PUBLIC_URL = "https://kickoff.bot",
 } = process.env;
 
 if (!MARKET_ADDRESS) throw new Error("MARKET_ADDRESS missing");
@@ -348,6 +352,62 @@ app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (_req, res) => res.json({ ok: true, market: MARKET_ADDRESS, token: TOKEN_ADDRESS }));
 
+// ── ERC-8004 Agent Card ─────────────────────────────────────────────────────
+// The agent's on-chain identity (agentURI in the Identity Registry) resolves
+// here. This is the agent's registration file: who it is, what it can do, and
+// the on-chain identity that proves it. Served at both /agent-card.json and the
+// well-known path so resolvers can discover it.
+function buildAgentCard() {
+  const caip2 = `eip155:${MONAD_CHAIN_ID}`;
+  const card = {
+    type: "https://eips.ethereum.org/EIPS/eip-8004",
+    name: "kickoff negotiator",
+    description:
+      "Autonomous negotiator agent for the kickoff.bot marketplace on Monad. " +
+      "Reads sealed buyer offers (max budget + the human story behind them), weighs " +
+      "willingness-to-pay against genuine need, runs a live seller-agent↔buyer-agents " +
+      "negotiation, picks a winner and settles the trade on-chain.",
+    url: PUBLIC_URL,
+    version: "1.0.0",
+    provider: { organization: "kickoff.bot", url: PUBLIC_URL },
+    registrations:
+      IDENTITY_REGISTRY && AGENT_ID
+        ? [
+            {
+              agentId: Number(AGENT_ID),
+              agentRegistry: `${caip2}:${IDENTITY_REGISTRY}`,
+              agentAddress: `${caip2}:${agentAddress}`,
+            },
+          ]
+        : [],
+    trustModels: ["feedback"],
+    skills: [
+      {
+        id: "negotiate",
+        name: "Marketplace negotiation",
+        description:
+          "Evaluates competing buyer offers on price AND human story, negotiates a fair " +
+          "final price at/below the buyer's max and above the seller's hidden reserve, " +
+          "then executes the settlement on-chain.",
+        tags: ["negotiation", "marketplace", "auctions", "monad"],
+      },
+    ],
+    capabilities: { streaming: false, onchainSettlement: true },
+    "x-monad": {
+      chainId: Number(MONAD_CHAIN_ID),
+      market: MARKET_ADDRESS,
+      token: TOKEN_ADDRESS,
+      identityRegistry: IDENTITY_REGISTRY || null,
+      agentId: AGENT_ID ? Number(AGENT_ID) : null,
+      model: "gpt-5-mini",
+    },
+  };
+  return card;
+}
+const sendAgentCard = (_req, res) => res.json(buildAgentCard());
+app.get("/agent-card.json", sendAgentCard);
+app.get("/.well-known/agent-card.json", sendAgentCard);
+
 // ── Admin (demo control): create a listing / reveal — token-gated ───────────
 function adminOk(req) {
   return ADMIN_TOKEN && (req.body?.adminToken === ADMIN_TOKEN || req.get("x-admin-token") === ADMIN_TOKEN);
@@ -432,6 +492,9 @@ app.get("/api/config", async (_req, res) => {
     token: TOKEN_ADDRESS,
     explorer: MONAD_EXPLORER,
     agent: agentAddress,
+    identityRegistry: IDENTITY_REGISTRY || null,
+    agentId: AGENT_ID ? Number(AGENT_ID) : null,
+    agentCardUrl: `${PUBLIC_URL}/agent-card.json`,
     walletMode: await wallets.mode().catch(() => "unknown"),
   });
 });

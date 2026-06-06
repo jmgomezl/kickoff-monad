@@ -7,6 +7,8 @@ const resources = {
       brand: "KICKOFF",
       tagline: "Tu agente negocia. Tú ganas.",
       subtitle: "El marketplace donde un agente de IA decide.",
+      agentLabel: "Agente",
+      agentIdTitle: "Identidad on-chain del agente (ERC-8004) — ver registro",
       // Arena feed
       scanToPlay: "Escanea para participar",
       scanHint: "Abre Telegram, recibe 50.000 MONADCOP y haz tu oferta",
@@ -103,6 +105,8 @@ const resources = {
       brand: "KICKOFF",
       tagline: "Your agent negotiates. You win.",
       subtitle: "The marketplace where an AI agent decides.",
+      agentLabel: "Agent",
+      agentIdTitle: "Agent's on-chain identity (ERC-8004) — view registry",
       scanToPlay: "Scan to join",
       scanHint: "Open Telegram, get 50,000 MONADCOP and make your offer",
       onSale: "For sale",

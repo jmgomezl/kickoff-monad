@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { QRCodeSVG } from "qrcode.react";
 import LangToggle from "../components/LangToggle.jsx";
 import PixelAvatar from "../components/PixelAvatar.jsx";
 import ArenaControls from "../components/ArenaControls.jsx";
 import { useArena } from "../useArena.js";
-import { BOT_URL, explorerTx } from "../config.js";
+import { BOT_URL, explorerTx, explorerAddress, IDENTITY_REGISTRY, AGENT_ID } from "../config.js";
 
 const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—");
 const num = (v) => Number(v || 0).toLocaleString();
@@ -50,12 +50,18 @@ function Confetti() {
 // Plays the seller-agent ↔ buyer-agents negotiation line by line.
 function Negotiation({ dialogue = [], reasoning, t }) {
   const [shown, setShown] = useState(1);
+  const endRef = useRef(null);
   useEffect(() => {
     if (shown >= dialogue.length) return;
     const id = setTimeout(() => setShown((s) => s + 1), 2200);
     return () => clearTimeout(id);
   }, [shown, dialogue.length]);
   const allShown = shown >= dialogue.length;
+  // Keep the newest line in view as the negotiation plays out (and when the
+  // verdict lands), so a long conversation never scrolls out of sight.
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [shown, allShown]);
   return (
     <div className="negotiation">
       <div className="kicker">🤝 {t("negotiation")}</div>
@@ -80,7 +86,9 @@ function Negotiation({ dialogue = [], reasoning, t }) {
       {allShown && reasoning && <div className="nego-verdict">⚖️ {reasoning}</div>}
       <div className="nego-tech">
         🔒 Billeteras AWS&nbsp;KMS · 🤖 gpt-5-mini · ⚡ Monad · finalidad 0.4s · 🔗 on-chain
+        {AGENT_ID ? ` · 🆔 ERC-8004 #${AGENT_ID}` : ""}
       </div>
+      <div ref={endRef} />
     </div>
   );
 }
@@ -92,6 +100,11 @@ export default function Arena() {
     useArena();
   const ATT_KEY = { humano: "attHumano", equilibrado: "attEquilibrado", agresivo: "attAgresivo" };
   const { secs } = useCountdown(deadline);
+
+  // Let the operator dismiss the reasoning/winner/reveal overlay when they're
+  // done with it; it re-appears automatically on the next phase change.
+  const [overlayHidden, setOverlayHidden] = useState(false);
+  useEffect(() => setOverlayHidden(false), [phase]);
 
   const reasoning = agent?.reasoning || "";
   const [typed, setTyped] = useState("");
@@ -126,6 +139,17 @@ export default function Arena() {
             <span className="ball">⚽</span> {t("brand")}
           </div>
           <div className="tagline">{t("tagline")} · {t("subtitle")}</div>
+          {AGENT_ID && (
+            <a
+              className="agent-id-badge"
+              href={IDENTITY_REGISTRY ? explorerAddress(IDENTITY_REGISTRY) : "#"}
+              target="_blank"
+              rel="noreferrer"
+              title={t("agentIdTitle")}
+            >
+              🆔 ERC-8004 · {t("agentLabel")} #{AGENT_ID} ↗
+            </a>
+          )}
         </div>
         <div className="arena-status">
           {replaying && (
@@ -262,8 +286,11 @@ export default function Arena() {
           unseal and stay visible so the crowd reads every pitch while the agent
           deliberates. The reasoning/winner/reveal overlays come after. */}
 
-      {phase === PHASES.REASONING && (
+      {phase === PHASES.REASONING && !overlayHidden && (
         <div className="overlay">
+          <button className="overlay-close" onClick={() => setOverlayHidden(true)} aria-label="cerrar">
+            ✕
+          </button>
           {agent?.noOffers ? (
             <div className="reasoning-panel">
               <div className="kicker">🤖 {t("agentReasoning")}</div>
@@ -280,8 +307,11 @@ export default function Arena() {
         </div>
       )}
 
-      {phase === PHASES.WINNER && (
+      {phase === PHASES.WINNER && !overlayHidden && (
         <div className="overlay winner">
+          <button className="overlay-close" onClick={() => setOverlayHidden(true)} aria-label="cerrar">
+            ✕
+          </button>
           <Confetti />
           <div>
             <div className="crown">👑</div>
@@ -316,8 +346,11 @@ export default function Arena() {
         </div>
       )}
 
-      {phase === PHASES.REVEAL && reveal && (
+      {phase === PHASES.REVEAL && reveal && !overlayHidden && (
         <div className="overlay reveal">
+          <button className="overlay-close" onClick={() => setOverlayHidden(true)} aria-label="cerrar">
+            ✕
+          </button>
           <Confetti />
           <div>
             <h1>🎭 {t("theReveal")}</h1>

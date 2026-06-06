@@ -12,6 +12,10 @@ export const MONAD_EXPLORER = env.VITE_MONAD_EXPLORER || "https://testnet.monade
 // Where the QR should point (the Telegram bot / Mini App). Falls back to the bot.
 export const BOT_URL = env.VITE_BOT_URL || env.VITE_WEBAPP_URL || "";
 
+// ERC-8004 (Trustless Agents) identity — the negotiator's on-chain agent ID.
+export const IDENTITY_REGISTRY = env.VITE_IDENTITY_REGISTRY || "";
+export const AGENT_ID = env.VITE_AGENT_ID || "";
+
 export function explorerTx(hash) {
   return hash ? `${MONAD_EXPLORER}/tx/${hash}` : "#";
 }
