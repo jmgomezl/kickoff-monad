@@ -324,6 +324,9 @@ export default function Arena() {
               <PixelAvatar seed={agent?.winner || winnerName} size={96} />
             </div>
             <div className="who">{winnerName}</div>
+            {offers[winnerIndex]?.request && (
+              <div className="winner-story">“{offers[winnerIndex].request}”</div>
+            )}
             <div className="bid">
               {t("paid")}: {num(agent?.finalPriceMcop)} {t("mcop")}
             </div>

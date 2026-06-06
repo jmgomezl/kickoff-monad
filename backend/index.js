@@ -193,6 +193,27 @@ async function treasurySendRetry(buildFn, label, attempts = 7) {
   throw lastErr || new Error(`${label} failed`);
 }
 
+// Top up a custodial wallet's gas before it sends a tx. Monad charges gas_LIMIT
+// (not gas_used) and the basefee spikes under load, so a single offer can cost
+// far more than the initial dust — and a re-submit drains it. This refuels the
+// wallet to GAS_DUST_MON right before an offer so it never hits "insufficient
+// balance" mid-demo. Best-effort: never blocks the offer if the RPC is flaky.
+async function ensureGas(addr) {
+  try {
+    const target = ethers.parseEther(String(GAS_DUST_MON));
+    const mon = await rcall(() => provider.getBalance(addr));
+    if (mon >= target) return;
+    await treasurySendRetry(
+      (nonce) => treasury.sendTransaction({ to: addr, value: target, nonce, gasLimit: 60000n }),
+      "offer-gas",
+      3
+    );
+    console.log(`offer-gas: topped up ${addr} (+${GAS_DUST_MON} MON)`);
+  } catch (e) {
+    console.warn("ensureGas:", e.message);
+  }
+}
+
 // ── Participant tracking (for result DMs) ───────────────────────────────────
 const participants = new Map(); // listingId -> [{ userId, address }]
 const itemNames = new Map(); // listingId -> itemName
@@ -684,6 +705,11 @@ app.post("/api/offer", async (req, res) => {
     if (maxBudgetWei > bal) {
       return res.status(400).json({ error: "budget exceeds balance" });
     }
+
+    // Refuel gas before spending — Monad's basefee spikes under the join rush and
+    // each offer charges gas_limit, so make sure the wallet can afford approve +
+    // submitOffer (and a re-submit) instead of failing with "insufficient balance".
+    await ensureGas(addr);
 
     const signer = await wallets.getSigner(userId, provider);
     const uToken = token.connect(signer);

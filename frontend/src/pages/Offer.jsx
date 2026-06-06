@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import WebApp from "@twa-dev/sdk";
 import LangToggle from "../components/LangToggle.jsx";
@@ -35,6 +35,20 @@ export default function Offer() {
   const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const submittedRef = useRef(null); // listingId the buyer last submitted an offer on
+
+  // When a NEW deal becomes active (different from the one the buyer submitted
+  // on), clear the previous submission so they don't keep seeing a stale
+  // "you won / you lost" from the prior round while a fresh deal is live.
+  useEffect(() => {
+    const id = listing?.listingId;
+    if (sent && submittedRef.current && id && id !== submittedRef.current) {
+      setSent(false);
+      setResult(null);
+      setText("");
+      submittedRef.current = null;
+    }
+  }, [listing?.listingId, sent]);
 
   // Telegram init + kick off wallet creation/airdrop + fetch active listing.
   useEffect(() => {
@@ -173,6 +187,7 @@ export default function Offer() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "failed");
+      submittedRef.current = listing.listingId;
       setSent(true);
       try {
         WebApp.HapticFeedback?.notificationOccurred("success");
@@ -213,6 +228,7 @@ export default function Offer() {
               <p>{t("lostSub", { price: result.price.toLocaleString() })}</p>
             </>
           )}
+          {text && <div className="your-story">“{text}”</div>}
           <button
             className="btn secondary"
             onClick={() => {
