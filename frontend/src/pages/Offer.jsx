@@ -37,18 +37,17 @@ export default function Offer() {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   const submittedRef = useRef(null); // listingId the buyer last submitted an offer on
 
-  // When a NEW deal becomes active (different from the one the buyer submitted
-  // on), clear the previous submission so they don't keep seeing a stale
-  // "you won / you lost" from the prior round while a fresh deal is live.
+  // If a NEW deal goes live before the buyer ever got their result, move them to
+  // the fresh deal's offer form. But once a result is shown, keep it on screen
+  // (they dismiss it via "send another") so a winner never loses their "ganaste".
   useEffect(() => {
     const id = listing?.listingId;
-    if (sent && submittedRef.current && id && id !== submittedRef.current) {
+    if (sent && !result && submittedRef.current && id && id !== submittedRef.current) {
       setSent(false);
-      setResult(null);
       setText("");
       submittedRef.current = null;
     }
-  }, [listing?.listingId, sent]);
+  }, [listing?.listingId, sent, result]);
 
   // Telegram init + kick off wallet creation/airdrop + fetch active listing.
   useEffect(() => {
@@ -133,18 +132,23 @@ export default function Offer() {
     };
   }, [uid, sent, result]);
 
-  // After submitting, poll the listing to surface the result in-app (won/lost).
+  // After submitting, poll the deal the buyer ACTUALLY offered on (not whatever
+  // is currently active) to surface their result in-app. Using the live listing
+  // is wrong when deals run back-to-back: the winner of deal A would be judged
+  // against deal B and shown "you lost".
   useEffect(() => {
-    if (!sent || !listing) return;
+    const offeredOn = submittedRef.current;
+    if (!sent || !offeredOn) return;
     let alive = true;
     const tick = async () => {
       try {
-        const s = await fetch(`${BACKEND_URL}/api/listing/${listing.listingId}`).then((r) => r.json());
+        const s = await fetch(`${BACKEND_URL}/api/listing/${offeredOn}`).then((r) => r.json());
         if (!alive || !s || s.state < 2 || !wallet?.address) return;
         const w = s.offers?.[s.winnerIndex];
-        const won = !!w && w.buyer?.toLowerCase() === wallet.address.toLowerCase();
+        const me = wallet.address.toLowerCase();
+        const won = !!w && w.buyer?.toLowerCase() === me;
         const price = Number(s.finalPriceMcop || 0);
-        const savings = won && w ? Math.max(0, Number(w.maxBudgetMcop) - price) : 0;
+        const savings = won ? Math.max(0, Number(w.maxBudgetMcop) - price) : 0;
         setResult({ won, price, savings });
         try {
           WebApp.HapticFeedback?.notificationOccurred(won ? "success" : "warning");
@@ -157,7 +161,7 @@ export default function Offer() {
       alive = false;
       clearInterval(id);
     };
-  }, [sent, listing, wallet]);
+  }, [sent, wallet]);
 
   const ready = balance != null; // wallet funded / balance known
   const secsLeft = listing?.deadline ? Math.max(0, listing.deadline - now) : null;
