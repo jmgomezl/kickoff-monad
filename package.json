@@ -13,11 +13,14 @@
     "demo": "bash scripts/demo-setup.sh"
   },
   "devDependencies": {
-    "hardhat": "^2.22.10",
-    "@nomicfoundation/hardhat-toolbox": "^5.0.0"
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "hardhat": "^2.22.10"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "@openzeppelin/contracts": "^5.0.2",
     "dotenv": "^16.4.5",
-    "ethers": "^6.13.2"
+    "ethers": "^6.13.2",
+    "openai": "^4.104.0"
   }
 }

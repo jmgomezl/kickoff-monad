@@ -1,11 +1,13 @@
 /**
- * kickoff backend — real-time relay + Telegram bot.
+ * kickoff backend v2 — agent-driven marketplace.
  *
- *  • Listens to KickoffArena events on Monad and broadcasts them over WebSocket
- *    to the Arena feed (big screen) and Offer Mini App.
- *  • Exposes REST snapshots so late-joining clients can catch up.
- *  • Receives the agent's live reasoning via POST /agent/event and rebroadcasts.
- *  • Runs a Telegram bot whose button opens the Offer Mini App.
+ *  • Per-Telegram-user CUSTODIAL wallets (KMS-encrypted, see wallets.js).
+ *  • On join: drip 50,000 MONADCOP + a little MON for gas.
+ *  • Offer: user types a natural-language request ("quiero X, doy hasta 50mil,
+ *    porque…"); Claude extracts their MAX budget; backend signs approve +
+ *    submitOffer from the user's wallet.
+ *  • Streams KickoffMarket events over WebSocket to the big-screen feed.
+ *  • Telegram bot opens the Mini App.
  */
 require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") });
 const fs = require("fs");
@@ -16,180 +18,345 @@ const cors = require("cors");
 const { WebSocketServer } = require("ws");
 const { ethers } = require("ethers");
 const { Telegraf, Markup } = require("telegraf");
+const { startEventPoller } = require("../shared/poller");
+const llm = require("../shared/llm");
+const wallets = require("./wallets");
 
 const {
   MONAD_RPC_URL = "https://testnet-rpc.monad.xyz",
   MONAD_EXPLORER = "https://testnet.monadexplorer.com",
-  CONTRACT_ADDRESS,
+  MARKET_ADDRESS,
+  TOKEN_ADDRESS,
+  TREASURY_PRIVATE_KEY,
+  PRIVATE_KEY,
+  AGENT_ADDRESS,
+  GAS_DUST_MON = "0.05",
   PORT = "3001",
   WS_PORT = "3002",
   TELEGRAM_BOT_TOKEN,
   WEBAPP_URL,
-  RELAYER_PRIVATE_KEY,
-  PRIVATE_KEY,
-  MAX_OFFER_MON = "0.05",
 } = process.env;
 
-if (!CONTRACT_ADDRESS) throw new Error("CONTRACT_ADDRESS missing");
+if (!MARKET_ADDRESS) throw new Error("MARKET_ADDRESS missing");
+if (!TOKEN_ADDRESS) throw new Error("TOKEN_ADDRESS missing");
 
-const ABI = JSON.parse(
-  fs.readFileSync(path.join(__dirname, "..", "shared", "KickoffArena.abi.json"), "utf8")
+const MARKET_ABI = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "..", "shared", "KickoffMarket.abi.json"), "utf8")
+);
+const TOKEN_ABI = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "..", "shared", "MONADCOP.abi.json"), "utf8")
 );
 
 const provider = new ethers.JsonRpcProvider(MONAD_RPC_URL);
-const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+const market = new ethers.Contract(MARKET_ADDRESS, MARKET_ABI, provider);
+const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, provider);
+
+// Treasury = MONADCOP owner (must be the deployer to call drip). Pays gas dust.
+const treasuryKey = TREASURY_PRIVATE_KEY || PRIVATE_KEY;
+const treasury = treasuryKey ? new ethers.Wallet(treasuryKey, provider) : null;
+const treasuryToken = treasury ? token.connect(treasury) : null;
+const agentAddress = AGENT_ADDRESS || (treasury ? treasury.address : ethers.ZeroAddress);
+
+const hasLlm = llm.provider() !== "none";
 const fmt = (wei) => ethers.formatEther(wei);
+const ONE = 10n ** 18n;
 
-// Relayer: submits offers on behalf of the crowd (who have no wallet/MON).
-// Each Mini App submission becomes a payable submitOffer tx from this wallet,
-// with the bidder's display name embedded in the argument.
-const relayerKey = RELAYER_PRIVATE_KEY || PRIVATE_KEY;
-const relayer = relayerKey ? new ethers.Wallet(relayerKey, provider) : null;
-const relayerContract = relayer ? contract.connect(relayer) : null;
-const maxOfferWei = ethers.parseEther(String(MAX_OFFER_MON));
-
-// Serialize relayed txs with a managed nonce so simultaneous scans don't clash.
-let _nonce = null;
-let _queue = Promise.resolve();
-async function relayOffer(arenaId, argument, valueWei) {
-  if (!relayerContract) throw new Error("relayer not configured");
-  const run = async () => {
-    if (_nonce === null) _nonce = await provider.getTransactionCount(relayer.address, "pending");
-    const nonce = _nonce++;
-    const tx = await relayerContract.submitOffer(arenaId, argument, {
-      value: valueWei,
-      nonce,
-    });
-    return tx;
-  };
-  // Chain onto the queue; isolate failures so one bad tx doesn't wedge the line.
-  const p = _queue.then(run, run);
-  _queue = p.catch(() => {});
+// ── Treasury nonce queue (serialize drip + gas-dust txs) ────────────────────
+// Re-syncs from the chain's pending count each tx, so it tolerates the seller /
+// reveal scripts also spending from this key without nonce collisions.
+let _tNonce = null;
+let _tQueue = Promise.resolve();
+async function nextTreasuryNonce() {
+  const chain = await provider.getTransactionCount(treasury.address, "pending");
+  if (_tNonce === null || chain > _tNonce) _tNonce = chain;
+  return _tNonce++;
+}
+function treasuryTx(fn) {
+  const run = async () => fn(await nextTreasuryNonce());
+  const p = _tQueue.then(run, run);
+  _tQueue = p.catch(() => {});
   return p;
 }
 
-// ── In-memory event log per arena (so new clients can catch up) ────────────
-const arenaLog = new Map(); // arenaId -> [events]
-function record(arenaId, event) {
-  const id = String(arenaId);
-  if (!arenaLog.has(id)) arenaLog.set(id, []);
-  arenaLog.get(id).push(event);
-}
-
-// ── WebSocket fan-out ──────────────────────────────────────────────────────
-const wss = new WebSocketServer({ port: Number(WS_PORT) });
-function broadcast(event) {
-  const payload = JSON.stringify(event);
-  for (const client of wss.clients) {
-    if (client.readyState === 1) client.send(payload);
+// Monad's parallel execution intermittently reverts a treasury tx when it shares
+// a block with another tx touching the same fresh account. A reverted tx still
+// consumes its nonce, so retrying picks a fresh nonce and a later block, which
+// clears it. Retry on both thrown errors and status-0 receipts.
+async function treasurySendRetry(buildFn, label, attempts = 4) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const tx = await treasuryTx((nonce) => buildFn(nonce));
+      const r = await tx.wait();
+      if (r?.status === 1) return r;
+      lastErr = new Error(`${label} reverted`);
+    } catch (e) {
+      lastErr = e;
+    }
+    if (i < attempts - 1) console.warn(`  ${label} attempt ${i + 1} failed, retrying…`);
   }
-}
-wss.on("connection", (ws) => {
-  console.log("ws client connected; total:", wss.clients.size);
-  ws.send(JSON.stringify({ type: "hello", ts: nowIso() }));
-});
-console.log("WebSocket listening on ws://localhost:" + WS_PORT);
-
-function emit(event) {
-  const e = { ...event, ts: nowIso() };
-  if (e.arenaId) record(e.arenaId, e);
-  broadcast(e);
-}
-function nowIso() {
-  return new Date().toISOString();
+  throw lastErr || new Error(`${label} failed`);
 }
 
-// ── Contract event listeners ───────────────────────────────────────────────
-contract.on("ArenaCreated", (arenaId, seller, agent, prizeName, deadline, collateral, ev) => {
-  console.log(`ArenaCreated #${arenaId} "${prizeName}"`);
-  emit({
-    type: "arena_created",
-    arenaId: String(arenaId),
-    seller,
-    agent,
-    prizeName,
-    deadline: Number(deadline),
-    collateralMon: fmt(collateral),
-    txHash: ev?.log?.transactionHash,
-  });
+// ── WebSocket fan-out ───────────────────────────────────────────────────────
+const arenaLog = new Map();
+function record(id, e) {
+  const k = String(id);
+  if (!arenaLog.has(k)) arenaLog.set(k, []);
+  arenaLog.get(k).push(e);
+}
+const wss = new WebSocketServer({ port: Number(WS_PORT) });
+function broadcast(e) {
+  const s = JSON.stringify(e);
+  for (const c of wss.clients) if (c.readyState === 1) c.send(s);
+}
+wss.on("connection", (ws) => ws.send(JSON.stringify({ type: "hello", ts: new Date().toISOString() })));
+function emit(e) {
+  const ev = { ...e, ts: new Date().toISOString() };
+  if (ev.listingId) record(ev.listingId, ev);
+  broadcast(ev);
+}
+console.log("WebSocket on ws://localhost:" + WS_PORT);
+
+// ── Market event poller (Monad has no eth_newFilter) ────────────────────────
+startEventPoller({
+  contract: market,
+  provider,
+  onError: (e) => console.warn("poller:", e.shortMessage || e.message),
+  handlers: {
+    ListingCreated: (a, log) => {
+      console.log(`ListingCreated #${a.listingId} "${a.itemName}"`);
+      emit({
+        type: "listing_created",
+        listingId: String(a.listingId),
+        seller: a.seller,
+        agent: a.agent,
+        itemName: a.itemName,
+        deadline: Number(a.deadline),
+        txHash: log.transactionHash,
+      });
+    },
+    OfferSubmitted: (a, log) => {
+      console.log(`OfferSubmitted listing ${a.listingId} #${a.offerIndex} max=${fmt(a.maxBudget)}`);
+      emit({
+        type: "offer_submitted",
+        listingId: String(a.listingId),
+        offerIndex: Number(a.offerIndex),
+        buyer: a.buyer,
+        maxBudgetMcop: fmt(a.maxBudget),
+        request: a.request,
+        txHash: log.transactionHash,
+      });
+    },
+    WinnerChosen: (a, log) => {
+      console.log(`WinnerChosen listing ${a.listingId} -> #${a.winnerIndex} price=${fmt(a.finalPrice)}`);
+      emit({
+        type: "winner_chosen",
+        listingId: String(a.listingId),
+        winnerIndex: Number(a.winnerIndex),
+        winner: a.winner,
+        finalPriceMcop: fmt(a.finalPrice),
+        maxBudgetMcop: fmt(a.maxBudget),
+        savingsMcop: fmt(a.savings),
+        reasoning: a.reasoning,
+        txHash: log.transactionHash,
+        explorerUrl: log.transactionHash ? `${MONAD_EXPLORER}/tx/${log.transactionHash}` : null,
+      });
+    },
+    ReserveRevealed: (a, log) => {
+      console.log(`ReserveRevealed listing ${a.listingId} reserve=${fmt(a.reserve)}`);
+      emit({
+        type: "reserve_revealed",
+        listingId: String(a.listingId),
+        reserveMcop: fmt(a.reserve),
+        finalPriceMcop: fmt(a.finalPrice),
+        marginMcop: fmt(a.margin),
+        txHash: log.transactionHash,
+      });
+    },
+  },
 });
 
-contract.on("OfferSubmitted", (arenaId, offerIndex, bidder, amount, argument, ev) => {
-  console.log(`OfferSubmitted arena ${arenaId} #${offerIndex} ${fmt(amount)} MON`);
-  emit({
-    type: "offer_submitted",
-    arenaId: String(arenaId),
-    offerIndex: Number(offerIndex),
-    bidder,
-    amountMon: fmt(amount),
-    argument,
-    txHash: ev?.log?.transactionHash,
-  });
-});
+// ── Claude: extract a max budget from free-text ─────────────────────────────
+async function parseMaxBudget(text, balanceMcop) {
+  const cap = Math.floor(Number(balanceMcop));
+  // Heuristic fallback first (works offline): "50mil", "50.000", "50000".
+  const regexGuess = (() => {
+    const t = text.toLowerCase();
+    if (/todo (mi )?dinero|todo lo que tengo/.test(t)) return cap;
+    const mil = t.match(/(\d+(?:[.,]\d+)?)\s*mil/);
+    if (mil) return Math.round(parseFloat(mil[1].replace(",", ".")) * 1000);
+    const num = t.match(/(\d[\d.,]{2,})/);
+    if (num) return Math.round(parseFloat(num[1].replace(/\./g, "").replace(",", ".")));
+    return cap;
+  })();
 
-contract.on("WinnerChosen", (arenaId, winnerIndex, winner, amount, reasoning, ev) => {
-  console.log(`WinnerChosen arena ${arenaId} -> #${winnerIndex} ${winner}`);
-  emit({
-    type: "winner_chosen",
-    arenaId: String(arenaId),
-    winnerIndex: Number(winnerIndex),
-    winner,
-    amountMon: fmt(amount),
-    reasoning,
-    txHash: ev?.log?.transactionHash,
-    explorerUrl: ev?.log?.transactionHash ? `${MONAD_EXPLORER}/tx/${ev.log.transactionHash}` : null,
-  });
-});
+  if (!hasLlm) return Math.min(Math.max(1, regexGuess), cap);
 
-contract.on("MinPriceRevealed", (arenaId, minPrice, winningBid, spread, ev) => {
-  console.log(`MinPriceRevealed arena ${arenaId} min=${fmt(minPrice)}`);
-  emit({
-    type: "min_price_revealed",
-    arenaId: String(arenaId),
-    minPriceMon: fmt(minPrice),
-    winningBidMon: fmt(winningBid),
-    spreadMon: fmt(spread),
-    txHash: ev?.log?.transactionHash,
-  });
-});
+  try {
+    const out = await llm.complete(
+      `El usuario tiene ${cap} MONADCOP. De este mensaje, ¿cuál es el MÁXIMO que está dispuesto a pagar, en MONADCOP (número entero, sin exceder ${cap})? Si dice "todo mi dinero" usa ${cap}. Responde SOLO con JSON: {"maxBudget": <entero>}.\n\nMensaje: "${text.replace(/"/g, "'")}"`,
+      { maxTokens: 60 }
+    );
+    const parsed = llm.extractJson(out);
+    if (parsed) {
+      const v = Math.round(Number(parsed.maxBudget));
+      if (Number.isFinite(v) && v > 0) return Math.min(v, cap);
+    }
+  } catch (e) {
+    console.warn("parseMaxBudget llm failed:", e.message);
+  }
+  return Math.min(Math.max(1, regexGuess), cap);
+}
 
-// ── Express REST + agent ingress ───────────────────────────────────────────
+// ── Express ─────────────────────────────────────────────────────────────────
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
-app.get("/health", (_req, res) => res.json({ ok: true, contract: CONTRACT_ADDRESS }));
+app.get("/health", (_req, res) => res.json({ ok: true, market: MARKET_ADDRESS, token: TOKEN_ADDRESS }));
 
-// The agent posts its live reasoning here; we rebroadcast to all WS clients.
+app.get("/api/config", async (_req, res) => {
+  res.json({
+    market: MARKET_ADDRESS,
+    token: TOKEN_ADDRESS,
+    explorer: MONAD_EXPLORER,
+    agent: agentAddress,
+    walletMode: await wallets.mode().catch(() => "unknown"),
+  });
+});
+
 app.post("/agent/event", (req, res) => {
-  const event = req.body || {};
-  if (!event.type) return res.status(400).json({ error: "missing type" });
-  emit(event);
+  const e = req.body || {};
+  if (!e.type) return res.status(400).json({ error: "missing type" });
+  emit(e);
   res.json({ ok: true });
 });
 
-// Snapshot of an arena (state + offers + recorded event log) for catch-up.
-app.get("/api/arena/:id", async (req, res) => {
+// Join: create the user's wallet, drip MONADCOP + gas dust if new.
+app.post("/api/join", async (req, res) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    if (!userId) return res.status(400).json({ error: "userId required" });
+    if (!treasuryToken) return res.status(503).json({ error: "treasury not configured" });
+
+    const { address, isNew } = await wallets.getOrCreateWallet(userId);
+
+    // Self-healing funding: ensure the wallet is dripped (once) and has gas,
+    // even on retries after a partial/failed earlier funding.
+    const [claimed, mon] = await Promise.all([
+      token.hasClaimed(address),
+      provider.getBalance(address),
+    ]);
+    const minGas = ethers.parseEther(String(GAS_DUST_MON)) / 2n;
+    const did = [];
+
+    // IMPORTANT: drip (mint) and dust (value) to the SAME new account in the same
+    // block revert under Monad's parallel execution. Do them sequentially — wait
+    // for the drip to mine before sending the dust.
+    if (!claimed) {
+      await treasurySendRetry(
+        (nonce) => treasuryToken.drip(address, { nonce, gasLimit: 120000n }),
+        "drip"
+      );
+      did.push("drip");
+    }
+    if (mon < minGas) {
+      await treasurySendRetry(
+        (nonce) =>
+          treasury.sendTransaction({
+            to: address,
+            value: ethers.parseEther(String(GAS_DUST_MON)),
+            nonce,
+            gasLimit: 60000n,
+          }),
+        "dust"
+      );
+      did.push("dust");
+    }
+    if (did.length) console.log(`join: ${address} for ${userId} funded (${did.join("+")})`);
+
+    const bal = await token.balanceOf(address);
+    res.json({ address, isNew, balanceMcop: fmt(bal) });
+  } catch (e) {
+    console.error("join failed:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/wallet/:userId", async (req, res) => {
+  try {
+    const addr = wallets.getAddress(req.params.userId);
+    if (!addr) return res.json({ address: null });
+    const [bal, mon] = await Promise.all([token.balanceOf(addr), provider.getBalance(addr)]);
+    res.json({ address: addr, balanceMcop: fmt(bal), monBalance: fmt(mon) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Offer: parse budget, approve + submitOffer from the user's custodial wallet.
+app.post("/api/offer", async (req, res) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const listingId = String(req.body?.listingId || "").trim();
+    const text = String(req.body?.text || "").trim();
+    if (!userId || !listingId || !text) {
+      return res.status(400).json({ error: "userId, listingId, text required" });
+    }
+    if (text.length > 500) return res.status(400).json({ error: "message too long (max 500)" });
+
+    const addr = wallets.getAddress(userId);
+    if (!addr) return res.status(400).json({ error: "join first" });
+
+    const bal = await token.balanceOf(addr);
+    const balMcop = fmt(bal);
+    const maxBudgetInt = await parseMaxBudget(text, balMcop);
+    const maxBudgetWei = BigInt(maxBudgetInt) * ONE;
+    if (maxBudgetWei > bal) {
+      return res.status(400).json({ error: "budget exceeds balance" });
+    }
+
+    const signer = await wallets.getSigner(userId, provider);
+    const uToken = token.connect(signer);
+    const uMarket = market.connect(signer);
+
+    // approve then submitOffer (sequential; user wallet has its own nonce).
+    const apTx = await uToken.approve(MARKET_ADDRESS, maxBudgetWei, { gasLimit: 80000n });
+    await apTx.wait();
+    const offTx = await uMarket.submitOffer(listingId, maxBudgetWei, text, { gasLimit: 700000n });
+
+    console.log(`offer: ${addr} listing ${listingId} max=${maxBudgetInt} tx=${offTx.hash}`);
+    res.json({ ok: true, txHash: offTx.hash, maxBudget: maxBudgetInt });
+    // OfferSubmitted event will broadcast on confirm.
+  } catch (e) {
+    console.error("offer failed:", e.message);
+    res.status(500).json({ error: e.shortMessage || e.message });
+  }
+});
+
+// Snapshot of a listing (state + offers + recorded log).
+app.get("/api/listing/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    const a = await contract.getArena(id);
-    const offers = await contract.getOffers(id);
+    const l = await market.getListing(id);
+    const offers = await market.getOffers(id);
     res.json({
-      arenaId: id,
-      seller: a.seller,
-      agent: a.agent,
-      prizeName: a.prizeName,
-      deadline: Number(a.deadline),
-      state: Number(a.state),
-      winnerIndex: Number(a.winnerIndex),
-      revealedMinPriceMon: fmt(a.revealedMinPrice),
-      reasoning: a.reasoning,
-      collateralMon: fmt(a.collateral),
+      listingId: id,
+      seller: l.seller,
+      agent: l.agent,
+      itemName: l.itemName,
+      deadline: Number(l.deadline),
+      state: Number(l.state),
+      winnerIndex: Number(l.winnerIndex),
+      finalPriceMcop: fmt(l.finalPrice),
+      revealedReserveMcop: fmt(l.revealedReserve),
+      reasoning: l.reasoning,
       offers: offers.map((o, i) => ({
         index: i,
-        bidder: o.bidder,
-        amountMon: fmt(o.amount),
-        argument: o.argument,
+        buyer: o.buyer,
+        maxBudgetMcop: fmt(o.maxBudget),
+        request: o.request,
         timestamp: Number(o.timestamp),
       })),
       log: arenaLog.get(String(id)) || [],
@@ -199,95 +366,53 @@ app.get("/api/arena/:id", async (req, res) => {
   }
 });
 
-// Latest open arena id (handy for the Mini App + feed).
 app.get("/api/active", async (_req, res) => {
   try {
-    const count = Number(await contract.arenaCount());
+    const count = Number(await market.listingCount());
     let active = null;
     for (let id = count; id >= 1; id--) {
-      const a = await contract.getArena(id);
-      if (Number(a.state) === 1) {
-        active = { arenaId: String(id), prizeName: a.prizeName, deadline: Number(a.deadline) };
+      const l = await market.getListing(id);
+      if (Number(l.state) === 1) {
+        active = { listingId: String(id), itemName: l.itemName, deadline: Number(l.deadline) };
         break;
       }
     }
-    res.json({ active, arenaCount: count });
+    res.json({ active, listingCount: count });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
-});
-
-// Crowd offer ingress — relayed on-chain by the house wallet.
-app.post("/api/offer", async (req, res) => {
-  try {
-    if (!relayerContract) return res.status(503).json({ error: "relayer not configured" });
-    const { arenaId, name, amountMon, argument } = req.body || {};
-    if (!arenaId) return res.status(400).json({ error: "arenaId required" });
-
-    const amt = Number(amountMon);
-    if (!(amt > 0)) return res.status(400).json({ error: "amount must be > 0" });
-    const valueWei = ethers.parseEther(String(amountMon));
-    if (valueWei > maxOfferWei) {
-      return res.status(400).json({ error: `max offer is ${MAX_OFFER_MON} MON` });
-    }
-
-    const cleanName = String(name || "Anónimo").replace(/[\r\n]/g, " ").slice(0, 40).trim();
-    const cleanArg = String(argument || "").replace(/[\r\n]/g, " ").slice(0, 800).trim();
-    if (!cleanArg) return res.status(400).json({ error: "argument required" });
-
-    // Embed the display name so the feed/agent can attribute the offer.
-    const composed = `${cleanName} — ${cleanArg}`;
-
-    const tx = await relayOffer(arenaId, composed, valueWei);
-    console.log(`relayed offer arena ${arenaId} "${cleanName}" ${amountMon} MON tx ${tx.hash}`);
-    res.json({ ok: true, txHash: tx.hash });
-    // We don't await tx.wait(); the OfferSubmitted event will broadcast on confirm.
-  } catch (e) {
-    console.error("relay offer failed:", e.message);
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.get("/api/config", (_req, res) => {
-  res.json({
-    contractAddress: CONTRACT_ADDRESS,
-    rpcUrl: MONAD_RPC_URL,
-    explorer: MONAD_EXPLORER,
-  });
 });
 
 const server = http.createServer(app);
-server.listen(Number(PORT), () => {
+server.listen(Number(PORT), async () => {
+  const mode = await wallets.mode().catch(() => "?");
   console.log("─".repeat(60));
-  console.log("kickoff backend");
-  console.log("  http    : http://localhost:" + PORT);
-  console.log("  ws      : ws://localhost:" + WS_PORT);
-  console.log("  contract:", CONTRACT_ADDRESS);
-  console.log("  rpc     :", MONAD_RPC_URL);
+  console.log("kickoff backend v2");
+  console.log("  http     : http://localhost:" + PORT);
+  console.log("  market   :", MARKET_ADDRESS);
+  console.log("  token    :", TOKEN_ADDRESS);
+  console.log("  treasury :", treasury ? treasury.address : "(none)");
+  console.log("  agent    :", agentAddress);
+  console.log("  wallets  :", mode);
+  console.log("  llm      :", hasLlm ? `${llm.provider()} ${llm.model()}` : "(disabled — regex budget parse)");
   console.log("─".repeat(60));
 });
 
-// ── Telegram bot ───────────────────────────────────────────────────────────
+// ── Telegram bot ────────────────────────────────────────────────────────────
 if (TELEGRAM_BOT_TOKEN && WEBAPP_URL) {
   const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
-
   const welcome = (ctx) =>
     ctx.reply(
-      "⚽ *KICKOFF* — Tu agente negocia, tú ganas.\n\n" +
-        "Toca el botón para hacer tu oferta por el premio. Un agente de IA decidirá el ganador en vivo sobre Monad.",
+      "🛒 *KICKOFF* — el marketplace donde tu agente negocia por ti.\n\n" +
+        "Recibes *50.000 MONADCOP* gratis. Describe qué quieres comprar y por qué — un agente de IA decidirá el ganador en vivo sobre Monad.",
       {
         parse_mode: "Markdown",
-        ...Markup.keyboard([
-          [Markup.button.webApp("⚽ Hacer una oferta / Make an offer", WEBAPP_URL)],
-        ]).resize(),
+        ...Markup.keyboard([[Markup.button.webApp("🛒 Abrir kickoff", WEBAPP_URL)]]).resize(),
       }
     );
-
   bot.start(welcome);
-  bot.command("offer", welcome);
-  bot.command("oferta", welcome);
-  bot.hears(/hola|hi|hello|start/i, welcome);
-
+  bot.command("comprar", welcome);
+  bot.hears(/hola|hi|hello|start|comprar/i, welcome);
   bot.launch().then(() => console.log("Telegram bot launched. WebApp:", WEBAPP_URL));
   process.once("SIGINT", () => bot.stop("SIGINT"));
   process.once("SIGTERM", () => bot.stop("SIGTERM"));

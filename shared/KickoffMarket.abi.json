@@ -1,0 +1,19 @@
+[
+  "function createListing(address token, bytes32 reserveCommit, uint256 deadline, string itemName, address agent) returns (uint256 listingId)",
+  "function submitOffer(uint256 listingId, uint256 maxBudget, string request) returns (uint256 offerIndex)",
+  "function executeWinner(uint256 listingId, uint256 winnerIndex, uint256 finalPrice, string reasoning)",
+  "function revealReserve(uint256 listingId, uint256 reserve, bytes32 salt)",
+  "function cancelListing(uint256 listingId)",
+  "function listingCount() view returns (uint256)",
+  "function hasOffered(uint256, address) view returns (bool)",
+  "function computeCommit(uint256 reserve, bytes32 salt) pure returns (bytes32)",
+  "function getListing(uint256 listingId) view returns (address seller, address agent, address token, bytes32 reserveCommit, uint256 deadline, string itemName, uint8 state, uint256 winnerIndex, uint256 finalPrice, uint256 revealedReserve, string reasoning)",
+  "function getOfferCount(uint256 listingId) view returns (uint256)",
+  "function getOffer(uint256 listingId, uint256 offerIndex) view returns (address buyer, uint256 maxBudget, string request, uint256 timestamp)",
+  "function getOffers(uint256 listingId) view returns (tuple(address buyer, uint256 maxBudget, string request, uint256 timestamp)[])",
+  "event ListingCreated(uint256 indexed listingId, address indexed seller, address indexed agent, address token, string itemName, uint256 deadline)",
+  "event OfferSubmitted(uint256 indexed listingId, uint256 indexed offerIndex, address indexed buyer, uint256 maxBudget, string request)",
+  "event WinnerChosen(uint256 indexed listingId, uint256 indexed winnerIndex, address indexed winner, uint256 finalPrice, uint256 maxBudget, uint256 savings, string reasoning)",
+  "event ReserveRevealed(uint256 indexed listingId, uint256 reserve, uint256 finalPrice, int256 margin)",
+  "event ListingCancelled(uint256 indexed listingId)"
+]

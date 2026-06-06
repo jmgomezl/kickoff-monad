@@ -10,6 +10,11 @@ node_modules/
 demo/salt.json
 demo/*.png
 
+# custodial wallet store + master keys (NEVER commit)
+deploy/wallets.json
+deploy/kms.json
+deploy/local-master.key
+
 # hardhat
 artifacts/
 cache/
