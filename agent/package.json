@@ -1,0 +1,16 @@
+{
+  "name": "kickoff-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2",
+    "node-fetch": "^2.7.0"
+  }
+}

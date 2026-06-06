@@ -1,0 +1,28 @@
+# deps
+node_modules/
+**/node_modules/
+
+# env / secrets
+.env
+.env.local
+**/.env
+*.salt
+demo/salt.json
+demo/*.png
+
+# hardhat
+artifacts/
+cache/
+typechain-types/
+
+# build
+frontend/dist/
+dist/
+build/
+
+# logs
+*.log
+npm-debug.log*
+
+# os
+.DS_Store

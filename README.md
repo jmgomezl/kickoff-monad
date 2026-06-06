@@ -1,127 +1,115 @@
-# Guía de Contribución: Cómo hacer un Fork del Proyecto
+# ⚽ kickoff.bot
 
-¡Gracias por tu interés en contribuir a este proyecto! Para comenzar a trabajar en tus propias modificaciones, debes crear una bifurcación (*fork*) del repositorio. A continuación, te explicamos el proceso paso a paso.
+**Your agent negotiates. You win.** · _Tu agente negocia. Tú ganas._
 
----
+A P2P **agent-driven negotiation marketplace** on **Monad**. Sellers put up a prize
+with a *hidden* minimum price; buyers submit offers — an **amount _and_ an argument** —
+and an **AI agent (Claude)** evaluates every offer live, weighing price *and* the
+quality of the argument, then executes the winner on-chain. 0.4s finality, near-zero gas.
 
-## 1. ¿Qué es un Fork?
-
-Un *fork* es una copia personal de este repositorio que se almacena en tu cuenta de GitHub. Te permite experimentar libremente con cambios (como corregir errores o añadir nuevas funcionalidades) sin afectar el proyecto original.
-
----
-
-## 2. Pasos para hacer un Fork y configurar tu Entorno
-
-### Paso 1: Crear el Fork en GitHub
-1. Dirígete a la página principal de este repositorio en GitHub.
-2. En la esquina superior derecha de la página, haz clic en el botón **Fork**.
-3. Selecciona la cuenta personal o la organización de GitHub donde deseas guardar el fork.
-4. *(Opcional)* Puedes cambiar el nombre o mantener el original. Asegúrate de dejar seleccionada la opción para copiar únicamente la rama principal (`main`/`master`) si solo requieres trabajar en ella, o desmarcarla si necesitas conservar todas las ramas.
-5. Haz clic en el botón **Create fork**.
-
-### Paso 2: Clonar tu Fork localmente
-Una vez creado el fork en tu perfil, clónalo en tu computadora local ejecutando el siguiente comando en tu terminal:
-
-```bash
-git clone https://github.com/TU_USUARIO/NOMBRE-DEL-REPOSITORIO.git
-```
-> [!NOTE]  
-> Asegúrate de reemplazar `TU_USUARIO` con tu nombre de usuario de GitHub y `NOMBRE-DEL-REPOSITORIO` con el nombre del proyecto.
-
-Accede al directorio del proyecto clonado:
-```bash
-cd NOMBRE-DEL-REPOSITORIO
-```
-
-### Paso 3: Configurar el Repositorio Original como Remoto (Upstream)
-Para mantener tu fork actualizado con los últimos desarrollos y evitar conflictos al fusionar tu código, debes vincular el repositorio original como un control remoto adicional llamado `upstream`:
-
-```bash
-git remote add upstream https://github.com/PROPIETARIO-ORIGINAL/NOMBRE-DEL-REPOSITORIO.git
-```
-> [!NOTE]  
-> Reemplaza `PROPIETARIO-ORIGINAL` y `NOMBRE-DEL-REPOSITORIO` con los datos del repositorio original desde donde hiciste el fork.
-
-Para verificar que los remotos se configuraron correctamente, ejecuta:
-```bash
-git remote -v
-```
-Deberías ver una salida similar a esta:
-```text
-origin    https://github.com/TU_USUARIO/NOMBRE-DEL-REPOSITORIO.git (fetch)
-origin    https://github.com/TU_USUARIO/NOMBRE-DEL-REPOSITORIO.git (push)
-upstream  https://github.com/PROPIETARIO-ORIGINAL/NOMBRE-DEL-REPOSITORIO.git (fetch)
-upstream  https://github.com/PROPIETARIO-ORIGINAL/NOMBRE-DEL-REPOSITORIO.git (push)
-```
+> Built for **Monad Blitz Medellín** — June 2026.
+> The live demo: a real football on stage, a QR code, a Telegram Mini App, 90 seconds
+> of offers, an AI agent deciding in front of the crowd, and a dramatic price reveal.
 
 ---
 
-## 3. Flujo de Trabajo para Contribuir
+## How it works
 
-Sigue esta guía paso a paso cada vez que vayas a realizar una nueva contribución:
-
-### 1. Sincronizar tu Fork con el Repositorio Original
-Antes de crear una nueva rama de trabajo, es sumamente importante que incorpores las últimas actualizaciones del repositorio original a tu copia local:
-
-```bash
-# Asegúrate de estar en tu rama principal local
-git checkout main
-
-# Descarga los cambios más recientes del repositorio original (upstream)
-git fetch upstream
-
-# Fusiona los cambios descargados en tu rama local principal
-git merge upstream/main
-
-# Sube los cambios actualizados a tu fork en GitHub (origin)
-git push origin main
+```
+ Seller ──commit keccak256(minPrice, salt)──▶ KickoffArena.sol  (Monad)
+ Crowd  ──offer (amount + argument)─────────▶  escrowed bids
+ Agent  ──Claude evaluates all offers───────▶  executeWinner(idx, reasoning)
+ Seller ──revealMinPrice(minPrice, salt)────▶  THE REVEAL (spread shown)
 ```
 
-### 2. Crear una nueva Rama (Branch)
-Trabaja siempre en una rama dedicada para la funcionalidad, mejora o corrección que planeas realizar. Evita hacer commits directamente sobre la rama `main`:
+- **Commit–reveal**: the seller's minimum price is hidden until after the winner is
+  chosen, so the agent can't be gamed and the reveal stays dramatic.
+- **Escrowed offers**: each bid is real MON held by the contract; losers are refunded
+  (pull pattern), the winning bid goes to the seller.
+- **Anti-fraud collateral**: if the seller refuses to reveal within `REVEAL_WINDOW`,
+  anyone can `slashUnrevealed()` to forfeit the collateral to the winner.
 
-```bash
-git checkout -b mi-nueva-contribucion
-```
-*(Elige un nombre descriptivo y en minúsculas para tu rama, por ejemplo: `fix-login-error` o `feat-dark-mode`)*
+## Architecture
 
-### 3. Realizar y Confirmar Cambios
-Realiza las modificaciones deseadas en el código. Para guardar el avance de tus cambios:
+| Component | Path | Role |
+|---|---|---|
+| Contract | [`contracts/KickoffArena.sol`](contracts/KickoffArena.sol) | Commit-reveal arena, escrow, winner execution, collateral |
+| Agent | [`agent/index.js`](agent/index.js) | Watches Monad events; at deadline asks **Claude** to pick a winner, publishes reasoning, executes on-chain |
+| Backend | [`backend/index.js`](backend/index.js) | Express + WebSocket relay of contract events; **Telegram bot**; relays crowd offers on-chain |
+| Frontend | [`frontend/`](frontend/) | React + Vite, bilingual (ES/EN). `Arena` = big-screen feed, `Offer` = Telegram Mini App |
 
-```bash
-# Verifica qué archivos han sido modificados o agregados
-git status
+## Stack
 
-# Añade los archivos correspondientes al área de preparación (staging)
-git add archivo_modificado.js
-
-# Registra tus cambios con un mensaje de commit descriptivo
-git commit -m "feat: descripción concisa y clara del cambio aportado"
-```
-
-### 4. Subir la Rama a tu Fork
-Envía tu rama de trabajo con tus nuevos commits a tu repositorio remoto en GitHub:
-
-```bash
-git push origin mi-nueva-contribucion
-```
-
-### 5. Crear un Pull Request (PR)
-1. Abre tu navegador y ve a tu fork en GitHub (`https://github.com/TU_USUARIO/NOMBRE-DEL-REPOSITORIO`).
-2. Verás un banner superior de color amarillo que te indica que has subido una nueva rama. Haz clic en el botón **Compare & pull request**.
-3. Si el banner no aparece, dirígete a la pestaña **Pull requests** en el repositorio original y haz clic en **New pull request**. Luego, selecciona la opción *"compare across forks"* para enlazar tu fork y la rama específica.
-4. Escribe un título representativo y describe de forma detallada qué cambios realiza tu código, por qué son necesarios y cómo pueden probarse.
-5. Haz clic en **Create pull request**.
-
-¡Excelente trabajo! 🎉 El equipo de mantenedores del proyecto revisará tu propuesta, aportará comentarios si es necesario y, una vez aprobada, la fusionará con la rama principal del proyecto original.
+Solidity ^0.8.24 · Hardhat · Node + ethers v6 · Anthropic SDK (Claude Sonnet) ·
+Express + `ws` · Telegraf · React 18 + Vite · i18next · `@twa-dev/sdk` · Monad.
 
 ---
 
-## Recursos Adicionales
+## Quick start
 
-* [Documentación Oficial de GitHub: Trabajar con Forks](https://docs.github.com/es/pull-requests/collaborating-with-pull-requests/working-with-forks)
-* [Documentación Oficial de GitHub: Sincronizar un Fork](https://docs.github.com/es/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)
-* [Guía interactiva para resolver conflictos de fusión (merge conflicts)](https://docs.github.com/es/pull-requests/collaborating-with-pull-requests/addressing-merge-conflicts)
+```bash
+# 0. Install
+npm install                 # root: contracts + scripts
+( cd agent && npm install )
+( cd backend && npm install )
+( cd frontend && npm install )
+
+# 1. Configure
+cp .env.example .env        # fill PRIVATE_KEY, ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN…
+
+# 2. Deploy the contract to Monad
+npm run deploy              # prints CONTRACT_ADDRESS -> put it in .env (and VITE_CONTRACT_ADDRESS)
+
+# 3. Run the stack (separate terminals)
+npm run backend            # Express + WS + Telegram bot
+npm run agent              # Claude evaluation loop
+( cd frontend && npm run dev )
+
+# 4. Expose the frontend over HTTPS for the Telegram Mini App
+ngrok http 5173            # set the public URL as WEBAPP_URL + VITE_BOT_URL, restart backend
+```
+
+### Run the demo
+
+```bash
+npm run demo               # creates an arena, saves the salt, makes a QR, opens the Arena feed
+# … 90 seconds of offers; the agent decides automatically …
+npx hardhat run scripts/reveal.js --network monad   # the dramatic min-price reveal
+```
+
+Open the big screen at **`/arena`**; the Telegram Mini App opens **`/`**.
+
+## Environment
+
+See [`.env.example`](.env.example). Key blockers to clear first:
+
+1. **Fund the wallet** with MON for gas (and the relayer wallet for crowd offers).
+2. **Deploy the contract** — everything depends on `CONTRACT_ADDRESS`.
+3. **Telegram bot token** from [@BotFather](https://t.me/BotFather).
+4. **HTTPS URL** (ngrok or deployed) for the Mini App.
+
+> ⚠️ **Network note:** chainId `10143` is **Monad testnet**. The config is fully
+> env-driven (`MONAD_RPC_URL`, `MONAD_CHAIN_ID`) — point it wherever you actually
+> deploy. Test MON + near-zero gas makes testnet the natural fit for the demo.
+
+## Tests
+
+```bash
+npx hardhat test           # full happy path, wrong-reveal, agent-only, collateral slash
+```
+
+## Demo script (≈3m40s)
+
+1. Walk on stage with the football.
+2. _"Este balón se va a casa de alguien hoy. No lo decido yo — lo decide un agente de AI en tiempo real sobre Monad. Tienen 90 segundos."_
+3. Show the QR → audience scans → Mini App opens.
+4. Offers stream in live for 90s.
+5. The agent evaluates **publicly** — reasoning on screen.
+6. Winner announced → tx executes → 0.4s confirm on the explorer.
+7. **REVEAL**: the seller's min price, the spread, the crowd reacts.
+8. Hand the ball to the winner.
+9. _"Eso fue Kickoff. Tu agente negocia. Tú ganas. kickoff.bot"_
 
 ---
-*¡Feliz código!* 🚀
+
+_Forked from `devlabx3/monad-blitz-medellin` (hackathon fork-control). See [`FORK_GUIDE.md`](FORK_GUIDE.md)._

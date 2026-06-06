@@ -1,0 +1,23 @@
+{
+  "name": "kickoff-monad",
+  "version": "0.1.0",
+  "private": true,
+  "description": "kickoff.bot — P2P agent-driven negotiation marketplace on Monad",
+  "type": "commonjs",
+  "scripts": {
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js --network monad",
+    "create-arena": "hardhat run scripts/create-arena.js --network monad",
+    "agent": "node agent/index.js",
+    "backend": "node backend/index.js",
+    "demo": "bash scripts/demo-setup.sh"
+  },
+  "devDependencies": {
+    "hardhat": "^2.22.10",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.2"
+  }
+}
