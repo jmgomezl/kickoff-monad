@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { QRCodeSVG } from "qrcode.react";
 import LangToggle from "../components/LangToggle.jsx";
+import PixelAvatar from "../components/PixelAvatar.jsx";
 import { useArena } from "../useArena.js";
 import { BOT_URL, explorerTx } from "../config.js";
 
@@ -50,16 +51,27 @@ function Negotiation({ dialogue = [], reasoning, t }) {
     <div className="negotiation">
       <div className="kicker">🤝 {t("negotiation")}</div>
       <div className="nego-feed">
-        {dialogue.slice(0, shown).map((d, i) => (
-          <div key={i} className={`nego-line ${d.role === "seller" ? "seller" : "buyer"}`}>
-            <div className="nego-who">
-              {d.role === "seller" ? `🏷️ ${t("sellerAgent")}` : `🧑 ${d.who || t("buyerAgent")}`}
+        {dialogue.slice(0, shown).map((d, i) => {
+          const isSeller = d.role === "seller";
+          return (
+            <div key={i} className={`nego-line ${isSeller ? "seller" : "buyer"}`}>
+              <div className="nego-who">
+                <PixelAvatar
+                  seed={isSeller ? "kickoff-seller-agent" : d.who || "buyer-agent"}
+                  size={34}
+                  accent={isSeller ? "#ffd166" : undefined}
+                />
+                <span>{isSeller ? t("sellerAgent") : d.who || t("buyerAgent")}</span>
+              </div>
+              <div className="nego-bubble">{d.text}</div>
             </div>
-            <div className="nego-bubble">{d.text}</div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {allShown && reasoning && <div className="nego-verdict">⚖️ {reasoning}</div>}
+      <div className="nego-tech">
+        🔒 Billeteras AWS&nbsp;KMS · 🤖 gpt-5-mini · ⚡ Monad · finalidad 0.4s · 🔗 on-chain
+      </div>
     </div>
   );
 }
@@ -219,6 +231,9 @@ export default function Arena() {
                 {t("winnerIs")}
               </span>
             </h1>
+            <div className="winner-avatar">
+              <PixelAvatar seed={agent?.winner || winnerName} size={96} />
+            </div>
             <div className="who">{winnerName}</div>
             <div className="bid">
               {t("paid")}: {num(agent?.finalPriceMcop)} {t("mcop")}

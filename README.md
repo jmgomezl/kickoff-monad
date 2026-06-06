@@ -60,6 +60,17 @@ OpenAI / Anthropic SDK · Express + `ws` · Telegraf · React 18 + Vite · i18ne
 
 ---
 
+## Deployed contracts (Monad testnet · chainId 10143)
+
+| Contract | Address | Explorer |
+|---|---|---|
+| **MONADCOP** (ERC20) | `0xD8E6798331265b46136198b1ECf492Cb84797acD` | [view](https://testnet.monadexplorer.com/address/0xD8E6798331265b46136198b1ECf492Cb84797acD) |
+| **KickoffMarket** | `0xFab111F34cCCBb6212a8788aC322b4A3571072D0` | [view](https://testnet.monadexplorer.com/address/0xFab111F34cCCBb6212a8788aC322b4A3571072D0) |
+| KickoffArena (v1, superseded) | `0xD95E49E21952d01374440E4CF5cce43d407E927c` | [view](https://testnet.monadexplorer.com/address/0xD95E49E21952d01374440E4CF5cce43d407E927c) |
+
+- **RPC:** `https://testnet-rpc.monad.xyz` · **Explorer:** `https://testnet.monadexplorer.com`
+- **Live app:** https://kickoff.bot · **Big-screen feed:** https://arena.kickoff.bot · **Bot:** [@cryptokickoffbot](https://t.me/cryptokickoffbot)
+
 ## Quick start
 
 ```bash

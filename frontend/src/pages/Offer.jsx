@@ -30,6 +30,7 @@ export default function Offer() {
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const [result, setResult] = useState(null); // {won, price, savings}
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -85,6 +86,32 @@ export default function Offer() {
     return () => clearInterval(id);
   }, []);
 
+  // After submitting, poll the listing to surface the result in-app (won/lost).
+  useEffect(() => {
+    if (!sent || !listing) return;
+    let alive = true;
+    const tick = async () => {
+      try {
+        const s = await fetch(`${BACKEND_URL}/api/listing/${listing.listingId}`).then((r) => r.json());
+        if (!alive || !s || s.state < 2 || !wallet?.address) return;
+        const w = s.offers?.[s.winnerIndex];
+        const won = !!w && w.buyer?.toLowerCase() === wallet.address.toLowerCase();
+        const price = Number(s.finalPriceMcop || 0);
+        const savings = won && w ? Math.max(0, Number(w.maxBudgetMcop) - price) : 0;
+        setResult({ won, price, savings });
+        try {
+          WebApp.HapticFeedback?.notificationOccurred(won ? "success" : "warning");
+        } catch (_) {}
+      } catch (_) {}
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [sent, listing, wallet]);
+
   const ready = balance != null; // wallet funded / balance known
   const secsLeft = listing?.deadline ? Math.max(0, listing.deadline - now) : null;
   const closed = secsLeft === 0;
@@ -129,10 +156,38 @@ export default function Offer() {
       <div className="offer-page">
         <LangToggle />
         <div className="success">
-          <div className="check">✓</div>
-          <h2>{t("offerSent")}</h2>
-          <p>{t("offerSentSub")}</p>
-          <button className="btn secondary" onClick={() => setSent(false)}>
+          {!result ? (
+            <>
+              <div className="check waiting">⏳</div>
+              <h2>{t("offerSent")}</h2>
+              <p>{t("inPlay")}</p>
+            </>
+          ) : result.won ? (
+            <>
+              <div className="check win">🏆</div>
+              <h2>{t("youWon")}</h2>
+              <p>
+                {t("wonSub", {
+                  price: result.price.toLocaleString(),
+                  savings: result.savings.toLocaleString(),
+                })}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="check lose">🤝</div>
+              <h2>{t("youLost")}</h2>
+              <p>{t("lostSub", { price: result.price.toLocaleString() })}</p>
+            </>
+          )}
+          <button
+            className="btn secondary"
+            onClick={() => {
+              setSent(false);
+              setResult(null);
+              setText("");
+            }}
+          >
             {t("sendAnother")}
           </button>
         </div>
