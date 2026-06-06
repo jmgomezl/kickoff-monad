@@ -144,8 +144,12 @@ export default function Offer() {
       try {
         const s = await fetch(`${BACKEND_URL}/api/listing/${offeredOn}`).then((r) => r.json());
         if (!alive || !s || s.state < 2 || !wallet?.address) return;
-        const w = s.offers?.[s.winnerIndex];
         const me = wallet.address.toLowerCase();
+        // Only ever show a result for a deal this buyer is actually in — guards
+        // against ever rendering a loss for a deal they didn't participate in.
+        const myOffer = s.offers?.some((o) => o.buyer?.toLowerCase() === me);
+        if (!myOffer) return;
+        const w = s.offers?.[s.winnerIndex];
         const won = !!w && w.buyer?.toLowerCase() === me;
         const price = Number(s.finalPriceMcop || 0);
         const savings = won ? Math.max(0, Number(w.maxBudgetMcop) - price) : 0;
@@ -183,6 +187,10 @@ export default function Offer() {
     if (!listing) return setError(t("noActiveArena"));
     if (!text.trim()) return;
     setSubmitting(true);
+    // Bind result polling to THIS deal and wipe any prior-round result up front,
+    // so a stale "you lost" can never flash on the new submission.
+    setResult(null);
+    submittedRef.current = listing.listingId;
     try {
       const res = await fetch(`${BACKEND_URL}/api/offer`, {
         method: "POST",
@@ -239,6 +247,7 @@ export default function Offer() {
               setSent(false);
               setResult(null);
               setText("");
+              submittedRef.current = null;
             }}
           >
             {t("sendAnother")}
