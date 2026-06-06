@@ -21,6 +21,8 @@ const resources = {
       // Phases
       phaseEvaluating: "El agente está decidiendo…",
       phaseEvaluatingSub: "Pondera el presupuesto y la historia de cada persona",
+      deliberating: "El agente está deliberando…",
+      readingOffers: "🤖 Leyendo todas las ofertas…",
       agentReasoning: "Razonamiento del agente",
       winnerIs: "¡GANADOR!",
       paid: "Precio negociado",
@@ -77,6 +79,8 @@ const resources = {
       live: "LIVE",
       phaseEvaluating: "The agent is deciding…",
       phaseEvaluatingSub: "Weighing each person's budget and their story",
+      deliberating: "The agent is deliberating…",
+      readingOffers: "🤖 Reading every offer…",
       agentReasoning: "Agent reasoning",
       winnerIs: "WINNER!",
       paid: "Negotiated price",

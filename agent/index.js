@@ -39,6 +39,9 @@ const wallet = new ethers.Wallet(key, provider);
 const market = new ethers.Contract(MARKET_ADDRESS, ABI, wallet);
 
 const ONE = 10n ** 18n;
+// Pause on the "deliberating" screen (offers revealed) before deciding, so the
+// crowd can read every pitch. Tune with DELIBERATION_MS.
+const DELIBERATION_MS = Number(process.env.DELIBERATION_MS || 9000);
 const fmt = (wei) => ethers.formatEther(wei);
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const scheduled = new Set();
@@ -104,6 +107,9 @@ async function evaluate(listingId) {
     maxBudget: Math.floor(Number(fmt(o.maxBudget))),
     request: o.request,
   }));
+
+  // Deliberation beat: offers are now revealed on the feed; let the crowd read.
+  if (DELIBERATION_MS > 0) await new Promise((r) => setTimeout(r, DELIBERATION_MS));
 
   const decision = await askClaude(l.itemName, list);
   const winnerIndex = decision.winnerIndex;

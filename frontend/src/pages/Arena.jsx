@@ -80,6 +80,11 @@ export default function Arena() {
             <span className="dot" /> {t("live")}
           </div>
         )}
+        {phase === PHASES.EVALUATING && (
+          <div className="live-pill deliberating">
+            <span className="spin-sm" /> {t("deliberating")}
+          </div>
+        )}
       </div>
 
       <div className="arena-body">
@@ -115,6 +120,9 @@ export default function Arena() {
             <div>
               <h2>{t("offersIn")}</h2>
               {sealed && offers.length > 0 && <div className="sealed-hint">{t("offersSealed")}</div>}
+              {phase === PHASES.EVALUATING && (
+                <div className="sealed-hint reading">{t("readingOffers")}</div>
+              )}
             </div>
             <div className="offers-count">{offers.length}</div>
           </div>
@@ -152,15 +160,9 @@ export default function Arena() {
         </div>
       </div>
 
-      {phase === PHASES.EVALUATING && (
-        <div className="overlay evaluating">
-          <div>
-            <div className="ring" />
-            <h1>{t("phaseEvaluating")}</h1>
-            <div className="sub">{t("phaseEvaluatingSub")}</div>
-          </div>
-        </div>
-      )}
+      {/* During EVALUATING we deliberately do NOT cover the screen — the offers
+          unseal and stay visible so the crowd reads every pitch while the agent
+          deliberates. The reasoning/winner/reveal overlays come after. */}
 
       {phase === PHASES.REASONING && (
         <div className="overlay">
