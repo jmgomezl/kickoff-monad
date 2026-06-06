@@ -15,3 +15,7 @@ export const BOT_URL = env.VITE_BOT_URL || env.VITE_WEBAPP_URL || "";
 export function explorerTx(hash) {
   return hash ? `${MONAD_EXPLORER}/tx/${hash}` : "#";
 }
+
+export function explorerAddress(addr) {
+  return addr ? `${MONAD_EXPLORER}/address/${addr}` : "#";
+}

@@ -35,6 +35,13 @@ const resources = {
       mcop: "MONADCOP",
       // Offer (ChatGPT-style)
       yourBalance: "Tu saldo",
+      yourWallet: "Tu billetera",
+      agentManaged: "Creada y gestionada por tu agente",
+      securedKms: "🔒 Protegida con AWS KMS",
+      gasLabel: "Gas",
+      copy: "Copiar",
+      copied: "¡Copiado!",
+      viewOnExplorer: "Ver en el explorador",
       describeTitle: "¿Qué quieres comprar?",
       describePh:
         "Escribe como en un chat… ej: “Quiero el balón para mi hijo de 10 años, es su regalo de navidad. Doy hasta 50mil pero consígueme el mejor precio.”",
@@ -79,6 +86,13 @@ const resources = {
       marginOver: "above the reserve",
       mcop: "MONADCOP",
       yourBalance: "Your balance",
+      yourWallet: "Your wallet",
+      agentManaged: "Created & managed by your agent",
+      securedKms: "🔒 Secured with AWS KMS",
+      gasLabel: "Gas",
+      copy: "Copy",
+      copied: "Copied!",
+      viewOnExplorer: "View on explorer",
       describeTitle: "What do you want to buy?",
       describePh:
         "Type like a chat… e.g. “I want the ball for my 10-year-old son, it's his Christmas gift. I'll pay up to 50k but get me the best price.”",

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import WebApp from "@twa-dev/sdk";
 import LangToggle from "../components/LangToggle.jsx";
-import { BACKEND_URL } from "../config.js";
+import { BACKEND_URL, explorerAddress } from "../config.js";
 
 const TEXT_MAX = 500;
 
@@ -25,6 +25,8 @@ export default function Offer() {
   const uid = useMemo(() => resolveUserId(), []);
   const [listing, setListing] = useState(null);
   const [balance, setBalance] = useState(null); // number once known
+  const [wallet, setWallet] = useState(null); // {address, monBalance}
+  const [copied, setCopied] = useState(false);
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -48,6 +50,7 @@ export default function Offer() {
       .then((r) => r.json())
       .then((w) => {
         if (w?.balanceMcop != null) setBalance(Number(w.balanceMcop));
+        if (w?.address) setWallet((p) => ({ ...(p || {}), address: w.address }));
       })
       .catch(() => {});
 
@@ -63,7 +66,10 @@ export default function Offer() {
     const tick = async () => {
       try {
         const w = await fetch(`${BACKEND_URL}/api/wallet/${uid}`).then((r) => r.json());
-        if (alive && w?.address && w.balanceMcop != null) setBalance(Number(w.balanceMcop));
+        if (alive && w?.address && w.balanceMcop != null) {
+          setBalance(Number(w.balanceMcop));
+          setWallet({ address: w.address, monBalance: w.monBalance });
+        }
       } catch (_) {}
     };
     tick();
@@ -82,6 +88,16 @@ export default function Offer() {
   const ready = balance != null; // wallet funded / balance known
   const secsLeft = listing?.deadline ? Math.max(0, listing.deadline - now) : null;
   const closed = secsLeft === 0;
+  const shortAddr = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+  function copyAddr() {
+    if (!wallet?.address) return;
+    try {
+      navigator.clipboard.writeText(wallet.address);
+    } catch (_) {}
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   async function submit(e) {
     e.preventDefault();
@@ -146,6 +162,36 @@ export default function Offer() {
           <span className="lbl pulse">{t("preparingWallet")}</span>
         )}
       </div>
+
+      {/* Agent-created, KMS-managed wallet */}
+      {wallet?.address && (
+        <div className="wallet-card">
+          <div className="wc-top">
+            <span className="wc-label">{t("yourWallet")}</span>
+            <span className="wc-kms">{t("securedKms")}</span>
+          </div>
+          <div className="wc-addr">
+            <code>{shortAddr(wallet.address)}</code>
+            <button type="button" className="wc-btn" onClick={copyAddr}>
+              {copied ? t("copied") : t("copy")}
+            </button>
+            <a
+              className="wc-btn"
+              href={explorerAddress(wallet.address)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              {t("viewOnExplorer")} ↗
+            </a>
+          </div>
+          <div className="wc-sub">
+            🤖 {t("agentManaged")}
+            {wallet.monBalance != null && (
+              <> · {t("gasLabel")}: {Number(wallet.monBalance).toFixed(2)} MON</>
+            )}
+          </div>
+        </div>
+      )}
 
       {listing && (
         <div className="prize-banner">
