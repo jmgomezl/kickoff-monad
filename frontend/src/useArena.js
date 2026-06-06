@@ -22,8 +22,14 @@ export function useArena() {
   const [phase, setPhase] = useState(PHASES.WAITING);
   const [agent, setAgent] = useState(null);
   const [reveal, setReveal] = useState(null);
+  const [txs, setTxs] = useState([]);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef(null);
+
+  const addTx = useCallback((kind, txHash, amount) => {
+    if (!txHash) return;
+    setTxs((prev) => (prev.some((t) => t.txHash === txHash) ? prev : [...prev, { kind, txHash, amount }]));
+  }, []);
 
   const apply = useCallback((e) => {
     switch (e.type) {
@@ -34,6 +40,8 @@ export function useArena() {
         setOffers([]);
         setAgent(null);
         setReveal(null);
+        setTxs([]);
+        addTx("listing", e.txHash);
         setPhase(PHASES.LIVE);
         break;
       case "offer_submitted":
@@ -41,6 +49,7 @@ export function useArena() {
           if (prev.some((o) => o.txHash && o.txHash === e.txHash)) return prev;
           return [...prev, e];
         });
+        addTx("offer", e.txHash, e.maxBudgetMcop);
         setPhase((p) => (p === PHASES.WAITING ? PHASES.LIVE : p));
         break;
       case "agent_evaluating":
@@ -56,13 +65,16 @@ export function useArena() {
         break;
       case "agent_executing":
         setAgent((a) => ({ ...(a || {}), txHash: e.txHash, executing: true }));
+        addTx("exec", e.txHash);
         break;
       case "winner_chosen":
         setAgent((a) => ({ ...(a || {}), ...e, executing: false }));
+        addTx("pay", e.txHash, e.finalPriceMcop);
         setPhase(PHASES.WINNER);
         break;
       case "reserve_revealed":
         setReveal(e);
+        addTx("reveal", e.txHash);
         setPhase(PHASES.REVEAL);
         break;
       default:
@@ -131,5 +143,5 @@ export function useArena() {
     };
   }, [apply]);
 
-  return { listingId, itemName, deadline, offers, phase, agent, reveal, connected, PHASES };
+  return { listingId, itemName, deadline, offers, phase, agent, reveal, txs, connected, PHASES };
 }

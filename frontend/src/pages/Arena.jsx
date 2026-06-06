@@ -9,6 +9,14 @@ import { BOT_URL, explorerTx } from "../config.js";
 const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—");
 const num = (v) => Number(v || 0).toLocaleString();
 
+const TX_META = {
+  listing: { icon: "🟣", key: "txListing" },
+  offer: { icon: "💸", key: "txOffer" },
+  exec: { icon: "🤖", key: "txExec" },
+  pay: { icon: "💰", key: "txPay" },
+  reveal: { icon: "🎭", key: "txReveal" },
+};
+
 function useCountdown(deadline) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
@@ -78,7 +86,7 @@ function Negotiation({ dialogue = [], reasoning, t }) {
 
 export default function Arena() {
   const { t } = useTranslation();
-  const { itemName, deadline, offers, phase, agent, reveal, PHASES } = useArena();
+  const { itemName, deadline, offers, phase, agent, reveal, txs, PHASES } = useArena();
   const { secs } = useCountdown(deadline);
 
   const reasoning = agent?.reasoning || "";
@@ -198,6 +206,34 @@ export default function Arena() {
           )}
         </div>
       </div>
+
+      {/* On-chain transaction ticker — real Monad activity for the audience. */}
+      {txs.length > 0 && (
+        <div className="arena-txbar">
+          <span className="txbar-title">⛓ {t("onchain")}</span>
+          <div className="txbar-list">
+            {txs.slice(-6).map((tx) => {
+              const m = TX_META[tx.kind] || { icon: "🔗", key: "onchain" };
+              return (
+                <a
+                  key={tx.txHash}
+                  className={`tx-chip ${tx.kind}`}
+                  href={explorerTx(tx.txHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <span className="tx-ic">{m.icon}</span>
+                  <span className="tx-lbl">
+                    {t(m.key)}
+                    {tx.amount ? ` · ${num(tx.amount)}` : ""}
+                  </span>
+                  <span className="tx-hash">{short(tx.txHash)} ↗</span>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* During EVALUATING we deliberately do NOT cover the screen — the offers
           unseal and stay visible so the crowd reads every pitch while the agent

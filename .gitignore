@@ -14,6 +14,7 @@ demo/*.png
 deploy/wallets.json
 deploy/kms.json
 deploy/local-master.key
+deploy/reveals.json
 
 # hardhat
 artifacts/
@@ -31,3 +32,6 @@ npm-debug.log*
 
 # os
 .DS_Store
+
+# frontend prod build env (public VITE_ values, but keep out of git)
+.env.production

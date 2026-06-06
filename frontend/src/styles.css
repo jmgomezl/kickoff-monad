@@ -611,6 +611,101 @@ body {
   to { transform: translateY(120vh) rotate(720deg); opacity: 0.9; }
 }
 
+/* On-chain tx ticker (bottom of arena) */
+.arena-txbar {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  overflow-x: auto;
+}
+.txbar-title {
+  color: var(--purple-bright);
+  font-weight: 700;
+  font-size: clamp(12px, 1.1vw, 16px);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.txbar-list {
+  display: flex;
+  gap: 10px;
+}
+.tx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 6px 12px;
+  text-decoration: none;
+  color: var(--text);
+  white-space: nowrap;
+  font-size: clamp(11px, 1vw, 15px);
+  animation: slideIn 0.4s ease;
+}
+.tx-chip.pay { border-color: rgba(47, 230, 160, 0.5); }
+.tx-chip.reveal { border-color: rgba(255, 209, 102, 0.5); }
+.tx-chip .tx-lbl { font-weight: 600; }
+.tx-chip .tx-hash {
+  font-family: "Space Grotesk", monospace;
+  color: var(--purple-bright);
+  opacity: 0.85;
+}
+
+/* Control panel */
+.control-page {
+  min-height: 100vh;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 28px 20px 60px;
+}
+.ctrl-card {
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+  padding: 18px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.field-lbl {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+  margin-top: 4px;
+}
+.ctrl-input {
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--text);
+  font-size: 16px;
+  outline: none;
+}
+.ctrl-input:focus { border-color: var(--purple); }
+.ctrl-presets { display: flex; gap: 8px; flex-wrap: wrap; }
+.preset {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.preset:active { transform: scale(0.96); }
+.ctrl-status { color: var(--text); font-size: 15px; }
+.ctrl-status a, .ctrl-links a { color: var(--purple-bright); text-decoration: none; border-bottom: 1px dashed var(--purple); }
+
 /* ════════════════════════════════════════════════════════════
    OFFER — Telegram Mini App
    ════════════════════════════════════════════════════════════ */

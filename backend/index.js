@@ -35,6 +35,7 @@ const {
   WS_PORT = "3002",
   TELEGRAM_BOT_TOKEN,
   WEBAPP_URL,
+  ADMIN_TOKEN,
 } = process.env;
 
 if (!MARKET_ADDRESS) throw new Error("MARKET_ADDRESS missing");
@@ -55,6 +56,21 @@ const token = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, provider);
 const treasuryKey = TREASURY_PRIVATE_KEY || PRIVATE_KEY;
 const treasury = treasuryKey ? new ethers.Wallet(treasuryKey, provider) : null;
 const treasuryToken = treasury ? token.connect(treasury) : null;
+const marketSeller = treasury ? market.connect(treasury) : null;
+
+// Reserve+salt store so the operator can reveal later (survives restarts).
+const REVEALS_FILE = path.join(__dirname, "..", "deploy", "reveals.json");
+function loadReveals() {
+  try {
+    return JSON.parse(fs.readFileSync(REVEALS_FILE, "utf8"));
+  } catch (_) {
+    return {};
+  }
+}
+function saveReveals(r) {
+  fs.mkdirSync(path.dirname(REVEALS_FILE), { recursive: true });
+  fs.writeFileSync(REVEALS_FILE, JSON.stringify(r, null, 2));
+}
 const agentAddress = AGENT_ADDRESS || (treasury ? treasury.address : ethers.ZeroAddress);
 
 const hasLlm = llm.provider() !== "none";
@@ -253,6 +269,71 @@ app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/health", (_req, res) => res.json({ ok: true, market: MARKET_ADDRESS, token: TOKEN_ADDRESS }));
+
+// ── Admin (demo control): create a listing / reveal — token-gated ───────────
+function adminOk(req) {
+  return ADMIN_TOKEN && (req.body?.adminToken === ADMIN_TOKEN || req.get("x-admin-token") === ADMIN_TOKEN);
+}
+
+app.post("/api/admin/create-listing", async (req, res) => {
+  try {
+    if (!adminOk(req)) return res.status(403).json({ error: "unauthorized" });
+    if (!marketSeller) return res.status(503).json({ error: "seller not configured" });
+    const itemName = String(req.body?.itemName || "Balón oficial Monad Blitz").slice(0, 80);
+    const reserveMcop = String(req.body?.reserveMcop ?? "15000");
+    const durationSec = Math.max(15, Math.min(3600, Number(req.body?.durationSec || 90)));
+    const reserve = ethers.parseEther(reserveMcop);
+    const salt = ethers.hexlify(ethers.randomBytes(32));
+    const commit = ethers.solidityPackedKeccak256(["uint256", "bytes32"], [reserve, salt]);
+    const block = await provider.getBlock("latest");
+    const deadline = block.timestamp + durationSec;
+
+    const tx = await treasuryTx((nonce) =>
+      marketSeller.createListing(TOKEN_ADDRESS, commit, deadline, itemName, agentAddress, {
+        nonce,
+        gasLimit: 400000n,
+      })
+    );
+    const receipt = await tx.wait();
+    let listingId = null;
+    for (const lg of receipt.logs) {
+      try {
+        const p = market.interface.parseLog(lg);
+        if (p?.name === "ListingCreated") listingId = p.args.listingId.toString();
+      } catch (_) {}
+    }
+    if (listingId == null) listingId = (await market.listingCount()).toString();
+
+    const reveals = loadReveals();
+    reveals[listingId] = { reserve: reserve.toString(), reserveMcop, salt };
+    saveReveals(reveals);
+
+    console.log(`admin: created listing ${listingId} "${itemName}" ${durationSec}s tx ${tx.hash}`);
+    res.json({ ok: true, listingId, deadline, durationSec, reserveMcop, txHash: tx.hash });
+  } catch (e) {
+    console.error("admin create-listing failed:", e.message);
+    res.status(500).json({ error: e.shortMessage || e.message });
+  }
+});
+
+app.post("/api/admin/reveal", async (req, res) => {
+  try {
+    if (!adminOk(req)) return res.status(403).json({ error: "unauthorized" });
+    if (!marketSeller) return res.status(503).json({ error: "seller not configured" });
+    const listingId = String(req.body?.listingId || "");
+    const r = loadReveals()[listingId];
+    if (!r) return res.status(404).json({ error: "no reveal data for that listing" });
+    const tx = await treasuryTx((nonce) =>
+      marketSeller.revealReserve(listingId, r.reserve, r.salt, { nonce, gasLimit: 120000n })
+    );
+    await tx.wait();
+    console.log(`admin: revealed listing ${listingId} reserve ${r.reserveMcop} tx ${tx.hash}`);
+    res.json({ ok: true, txHash: tx.hash, reserveMcop: r.reserveMcop });
+  } catch (e) {
+    console.error("admin reveal failed:", e.message);
+    res.status(500).json({ error: e.shortMessage || e.message });
+  }
+});
 
 app.get("/api/config", async (_req, res) => {
   res.json({
