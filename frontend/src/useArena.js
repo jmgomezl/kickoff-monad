@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { BACKEND_URL, WS_URL } from "./config";
 
 /**
- * Subscribes to the backend WebSocket and reduces the event stream into a
- * single arena view-model: phase, offers, agent reasoning, winner, reveal.
+ * Subscribes to the backend WebSocket and reduces the KickoffMarket event
+ * stream into a single view-model for the big-screen feed.
  */
 const PHASES = {
   WAITING: "waiting",
@@ -15,21 +15,21 @@ const PHASES = {
 };
 
 export function useArena() {
-  const [arenaId, setArenaId] = useState(null);
-  const [prizeName, setPrizeName] = useState("");
+  const [listingId, setListingId] = useState(null);
+  const [itemName, setItemName] = useState("");
   const [deadline, setDeadline] = useState(null);
   const [offers, setOffers] = useState([]);
   const [phase, setPhase] = useState(PHASES.WAITING);
-  const [agent, setAgent] = useState(null); // {reasoning, winnerIndex, winner, amountMon, txHash, explorerUrl}
-  const [reveal, setReveal] = useState(null); // {minPriceMon, winningBidMon, spreadMon}
+  const [agent, setAgent] = useState(null);
+  const [reveal, setReveal] = useState(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef(null);
 
   const apply = useCallback((e) => {
     switch (e.type) {
-      case "arena_created":
-        setArenaId(e.arenaId);
-        setPrizeName(e.prizeName);
+      case "listing_created":
+        setListingId(e.listingId);
+        setItemName(e.itemName);
         setDeadline(e.deadline);
         setOffers([]);
         setAgent(null);
@@ -47,8 +47,8 @@ export function useArena() {
         setPhase(PHASES.EVALUATING);
         break;
       case "agent_no_offers":
+        setAgent({ noOffers: true });
         setPhase(PHASES.REASONING);
-        setAgent({ reasoning: null, noOffers: true });
         break;
       case "agent_reasoning":
         setAgent((a) => ({ ...(a || {}), ...e }));
@@ -61,7 +61,7 @@ export function useArena() {
         setAgent((a) => ({ ...(a || {}), ...e, executing: false }));
         setPhase(PHASES.WINNER);
         break;
-      case "min_price_revealed":
+      case "reserve_revealed":
         setReveal(e);
         setPhase(PHASES.REVEAL);
         break;
@@ -70,34 +70,33 @@ export function useArena() {
     }
   }, []);
 
-  // Hydrate the latest active arena on load (so projector can open anytime).
+  // Hydrate latest active listing on load.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/active`).then((x) => x.json());
         if (cancelled || !r.active) return;
-        const snap = await fetch(`${BACKEND_URL}/api/arena/${r.active.arenaId}`).then((x) =>
+        const snap = await fetch(`${BACKEND_URL}/api/listing/${r.active.listingId}`).then((x) =>
           x.json()
         );
         if (cancelled) return;
-        setArenaId(snap.arenaId);
-        setPrizeName(snap.prizeName);
+        setListingId(snap.listingId);
+        setItemName(snap.itemName);
         setDeadline(snap.deadline);
         setOffers(
           (snap.offers || []).map((o) => ({
             type: "offer_submitted",
             offerIndex: o.index,
-            bidder: o.bidder,
-            amountMon: o.amountMon,
-            argument: o.argument,
+            buyer: o.buyer,
+            maxBudgetMcop: o.maxBudgetMcop,
+            request: o.request,
           }))
         );
-        // Replay recorded agent log so a late projector catches reasoning/winner.
         (snap.log || []).forEach(apply);
         if (snap.state === 1) setPhase(PHASES.LIVE);
       } catch (_) {
-        /* backend not up yet — WS will drive it */
+        /* backend not up — WS will drive it */
       }
     })();
     return () => {
@@ -132,5 +131,5 @@ export function useArena() {
     };
   }, [apply]);
 
-  return { arenaId, prizeName, deadline, offers, phase, agent, reveal, connected, PHASES };
+  return { listingId, itemName, deadline, offers, phase, agent, reveal, connected, PHASES };
 }

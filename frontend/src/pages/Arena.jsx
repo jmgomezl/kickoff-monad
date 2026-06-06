@@ -5,16 +5,8 @@ import LangToggle from "../components/LangToggle.jsx";
 import { useArena } from "../useArena.js";
 import { BOT_URL, explorerTx } from "../config.js";
 
-// Offers are stored on-chain as "Name — argument". Split for display.
-function parseOffer(o) {
-  const raw = o.argument || "";
-  const idx = raw.indexOf(" — ");
-  if (idx > -1) {
-    return { name: raw.slice(0, idx), text: raw.slice(idx + 3) };
-  }
-  const who = o.bidder ? `${o.bidder.slice(0, 6)}…${o.bidder.slice(-4)}` : "Anónimo";
-  return { name: who, text: raw };
-}
+const short = (a) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "—");
+const num = (v) => Number(v || 0).toLocaleString();
 
 function useCountdown(deadline) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -22,38 +14,34 @@ function useCountdown(deadline) {
     const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 250);
     return () => clearInterval(t);
   }, []);
-  if (!deadline) return { secs: null, pct: 0 };
-  const secs = Math.max(0, deadline - now);
-  return { secs, now };
+  if (!deadline) return { secs: null };
+  return { secs: Math.max(0, deadline - now) };
 }
 
 function Confetti() {
   const colors = ["#ffd166", "#2fe6a0", "#a78bff", "#ff5fa2", "#836ef9"];
-  const bits = Array.from({ length: 80 }, (_, i) => i);
   return (
     <div className="confetti">
-      {bits.map((i) => {
-        const left = Math.random() * 100;
-        const delay = Math.random() * 0.6;
-        const dur = 2.2 + Math.random() * 2;
-        const bg = colors[i % colors.length];
-        return (
-          <i
-            key={i}
-            style={{ left: `${left}vw`, background: bg, animationDelay: `${delay}s`, animationDuration: `${dur}s` }}
-          />
-        );
-      })}
+      {Array.from({ length: 80 }, (_, i) => (
+        <i
+          key={i}
+          style={{
+            left: `${Math.random() * 100}vw`,
+            background: colors[i % colors.length],
+            animationDelay: `${Math.random() * 0.6}s`,
+            animationDuration: `${2.2 + Math.random() * 2}s`,
+          }}
+        />
+      ))}
     </div>
   );
 }
 
 export default function Arena() {
   const { t } = useTranslation();
-  const { prizeName, deadline, offers, phase, agent, reveal, PHASES } = useArena();
+  const { itemName, deadline, offers, phase, agent, reveal, PHASES } = useArena();
   const { secs } = useCountdown(deadline);
 
-  // Typewriter for agent reasoning.
   const reasoning = agent?.reasoning || "";
   const [typed, setTyped] = useState("");
   useEffect(() => {
@@ -66,30 +54,24 @@ export default function Arena() {
       i += 2;
       setTyped(reasoning.slice(0, i));
       if (i >= reasoning.length) clearInterval(id);
-    }, 28);
+    }, 26);
     return () => clearInterval(id);
   }, [phase, reasoning]);
 
   const winnerIndex = agent?.winnerIndex;
   const totalSecs = useMemo(() => 90, []);
   const pct = secs != null ? Math.min(100, (secs / totalSecs) * 100) : 0;
-
-  const winnerOffer = offers[winnerIndex];
-  const winnerParsed = winnerOffer ? parseOffer(winnerOffer) : null;
-  const agentWinnerName =
-    winnerParsed?.name ||
-    (agent?.winner ? `${agent.winner.slice(0, 6)}…${agent.winner.slice(-4)}` : "—");
+  const winnerName = agent?.winner ? short(agent.winner) : "—";
 
   return (
     <div className="arena">
       <LangToggle />
-
       <div className="arena-top">
         <div>
           <div className="brand">
             <span className="ball">⚽</span> {t("brand")}
           </div>
-          <div className="tagline">{t("tagline")}</div>
+          <div className="tagline">{t("tagline")} · {t("subtitle")}</div>
         </div>
         {phase === PHASES.LIVE && (
           <div className="live-pill">
@@ -99,7 +81,6 @@ export default function Arena() {
       </div>
 
       <div className="arena-body">
-        {/* Left column: QR + prize + timer */}
         <div className="qr-col">
           <div className="qr-card">
             <h3>{t("scanToPlay")}</h3>
@@ -110,10 +91,9 @@ export default function Arena() {
           </div>
 
           <div className="prize-card">
-            <div className="label">{t("prizeLabel")}</div>
-            <div className="name">{prizeName || "—"}</div>
+            <div className="label">{t("onSale")}</div>
+            <div className="name">{itemName || "—"}</div>
             <div className="prize-emoji">⚽</div>
-
             <div className="timer">
               <div className="row">
                 <span className="lbl">{t("timeLeft")}</span>
@@ -128,7 +108,6 @@ export default function Arena() {
           </div>
         </div>
 
-        {/* Right column: offers */}
         <div className="offers-col">
           <div className="offers-head">
             <h2>{t("offersIn")}</h2>
@@ -139,15 +118,15 @@ export default function Arena() {
           ) : (
             <div className="offers-grid">
               {offers.map((o, i) => {
-                const p = parseOffer(o);
-                const isWin = phase === PHASES.WINNER || phase === PHASES.REVEAL ? i === winnerIndex : false;
+                const isWin =
+                  (phase === PHASES.WINNER || phase === PHASES.REVEAL) && i === winnerIndex;
                 return (
                   <div key={o.txHash || i} className={`offer-card ${isWin ? "win" : ""}`}>
                     <div className="top">
-                      <span className="who">{isWin ? "👑 " : ""}{p.name}</span>
-                      <span className="amt">{Number(o.amountMon)} MON</span>
+                      <span className="who">{isWin ? "👑 " : ""}{short(o.buyer)}</span>
+                      <span className="amt">≤ {num(o.maxBudgetMcop)}</span>
                     </div>
-                    <div className="arg">{p.text}</div>
+                    <div className="arg">{o.request}</div>
                   </div>
                 );
               })}
@@ -156,7 +135,6 @@ export default function Arena() {
         </div>
       </div>
 
-      {/* ── Overlays ───────────────────────────────────────── */}
       {phase === PHASES.EVALUATING && (
         <div className="overlay evaluating">
           <div>
@@ -190,10 +168,16 @@ export default function Arena() {
                 {t("winnerIs")}
               </span>
             </h1>
-            <div className="who">{agentWinnerName}</div>
+            <div className="who">{winnerName}</div>
             <div className="bid">
-              {t("winningBid")}: {Number(agent?.amountMon || winnerOffer?.amountMon || 0)} MON
+              {t("paid")}: {num(agent?.finalPriceMcop)} {t("mcop")}
             </div>
+            {agent?.savingsMcop != null && (
+              <div className="savings">
+                💸 {t("saved")} {num(agent.savingsMcop)} {t("mcop")} ({t("maxWas")}{" "}
+                {num(agent.maxBudgetMcop)})
+              </div>
+            )}
             {agent?.executing && <div className="sub">{t("executingTx")}</div>}
             {agent?.txHash && (
               <div className="tx">
@@ -214,23 +198,23 @@ export default function Arena() {
             <h1>🎭 {t("theReveal")}</h1>
             <div className="reveal-grid">
               <div className="reveal-num min">
-                <div className="lbl">{t("minPrice")}</div>
-                <div className="v">{Number(reveal.minPriceMon)} </div>
+                <div className="lbl">{t("reserve")}</div>
+                <div className="v">{num(reveal.reserveMcop)}</div>
               </div>
               <div className="reveal-num bid">
-                <div className="lbl">{t("winningBid")}</div>
-                <div className="v">{Number(reveal.winningBidMon)}</div>
+                <div className="lbl">{t("finalPrice")}</div>
+                <div className="v">{num(reveal.finalPriceMcop)}</div>
               </div>
               <div className="reveal-num spread">
-                <div className="lbl">{t("spread")}</div>
+                <div className="lbl">{t("margin")}</div>
                 <div className="v">
-                  {Number(reveal.spreadMon) >= 0 ? "+" : ""}
-                  {Number(reveal.spreadMon)}
+                  {Number(reveal.marginMcop) >= 0 ? "+" : ""}
+                  {num(reveal.marginMcop)}
                 </div>
               </div>
             </div>
             <div className="spread-note">
-              {Number(reveal.spreadMon) >= 0 ? t("spreadOver") : t("spreadUnder")} · MON
+              {t("marginOver")} · {t("mcop")}
             </div>
           </div>
         </div>

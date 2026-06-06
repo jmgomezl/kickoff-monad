@@ -1,51 +1,63 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import WebApp from "@twa-dev/sdk";
 import LangToggle from "../components/LangToggle.jsx";
 import { BACKEND_URL } from "../config.js";
 
-const ARG_MAX = 280;
+const TEXT_MAX = 500;
+
+// Stable per-device id for browser testing; Telegram user id inside the Mini App.
+function resolveUserId() {
+  try {
+    const u = WebApp.initDataUnsafe?.user;
+    if (u?.id) return `tg-${u.id}`;
+  } catch (_) {}
+  let id = localStorage.getItem("kickoff_uid");
+  if (!id) {
+    id = "web-" + Math.random().toString(36).slice(2, 10);
+    localStorage.setItem("kickoff_uid", id);
+  }
+  return id;
+}
 
 export default function Offer() {
   const { t } = useTranslation();
-  const [arena, setArena] = useState(null); // {arenaId, prizeName, deadline}
-  const [loading, setLoading] = useState(true);
-  const [name, setName] = useState("");
-  const [amount, setAmount] = useState(0.01);
-  const [argument, setArgument] = useState("");
+  const [listing, setListing] = useState(null);
+  const [wallet, setWallet] = useState(null); // {address, balanceMcop}
+  const [joining, setJoining] = useState(true);
+  const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
+  const userId = useRef(null);
 
-  // Telegram init.
   useEffect(() => {
     try {
       WebApp.ready();
       WebApp.expand();
-      const u = WebApp.initDataUnsafe?.user;
-      if (u) setName([u.first_name, u.last_name].filter(Boolean).join(" ") || u.username || "");
-    } catch (_) {
-      /* not inside Telegram — fine for browser testing */
-    }
-  }, []);
+    } catch (_) {}
+    userId.current = resolveUserId();
 
-  // Fetch active arena.
-  useEffect(() => {
-    let alive = true;
     (async () => {
-      try {
-        const r = await fetch(`${BACKEND_URL}/api/active`).then((x) => x.json());
-        if (alive) setArena(r.active || null);
-      } catch (_) {
-        if (alive) setArena(null);
-      } finally {
-        if (alive) setLoading(false);
-      }
+      // Kick off wallet creation + airdrop and active-listing fetch in parallel.
+      const join = fetch(`${BACKEND_URL}/api/join`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userId: userId.current }),
+      })
+        .then((r) => r.json())
+        .then((w) => setWallet(w))
+        .catch(() => {})
+        .finally(() => setJoining(false));
+
+      fetch(`${BACKEND_URL}/api/active`)
+        .then((r) => r.json())
+        .then((r) => setListing(r.active || null))
+        .catch(() => setListing(null));
+
+      await join;
     })();
-    return () => {
-      alive = false;
-    };
   }, []);
 
   useEffect(() => {
@@ -53,24 +65,23 @@ export default function Offer() {
     return () => clearInterval(id);
   }, []);
 
-  const secsLeft = arena?.deadline ? Math.max(0, arena.deadline - now) : null;
+  const secsLeft = listing?.deadline ? Math.max(0, listing.deadline - now) : null;
   const closed = secsLeft === 0;
 
   async function submit(e) {
     e.preventDefault();
     setError("");
-    if (!arena) return setError(t("noActiveArena"));
-    if (!argument.trim()) return setError(t("errorGeneric"));
+    if (!listing) return setError(t("noActiveArena"));
+    if (!text.trim()) return;
     setSubmitting(true);
     try {
       const res = await fetch(`${BACKEND_URL}/api/offer`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          arenaId: arena.arenaId,
-          name: name.trim() || "Anónimo",
-          amountMon: amount,
-          argument: argument.trim(),
+          userId: userId.current,
+          listingId: listing.listingId,
+          text: text.trim(),
         }),
       });
       const data = await res.json();
@@ -86,22 +97,6 @@ export default function Offer() {
     }
   }
 
-  function reset() {
-    setSent(false);
-    setArgument("");
-    setError("");
-  }
-
-  if (loading) {
-    return (
-      <div className="center-screen">
-        <div className="brand">
-          <span className="ball">⚽</span> KICKOFF
-        </div>
-      </div>
-    );
-  }
-
   if (sent) {
     return (
       <div className="offer-page">
@@ -110,7 +105,7 @@ export default function Offer() {
           <div className="check">✓</div>
           <h2>{t("offerSent")}</h2>
           <p>{t("offerSentSub")}</p>
-          <button className="btn secondary" onClick={reset}>
+          <button className="btn secondary" onClick={() => setSent(false)}>
             {t("sendAnother")}
           </button>
         </div>
@@ -128,60 +123,48 @@ export default function Offer() {
         <div className="tagline">{t("tagline")}</div>
       </div>
 
-      <div className="prize-banner">
-        <div className="emoji">⚽</div>
-        <div className="label">{t("prizeLabel")}</div>
-        <div className="name">{arena?.prizeName || "—"}</div>
-        {secsLeft != null && (
-          <div className="countdown-mini">⏱ {secsLeft}s</div>
-        )}
+      {/* Balance chip */}
+      <div className="balance-chip">
+        <span className="coin">🪙</span>
+        <span className="lbl">{t("yourBalance")}</span>
+        <span className="val">
+          {joining ? "…" : Number(wallet?.balanceMcop || 0).toLocaleString()} {t("mcop")}
+        </span>
       </div>
 
-      {!arena ? (
-        <div className="center-screen">{t("noActiveArena")}</div>
+      {listing && (
+        <div className="prize-banner">
+          <div className="emoji">⚽</div>
+          <div className="label">{t("onSale")}</div>
+          <div className="name">{listing.itemName}</div>
+          {secsLeft != null && <div className="countdown-mini">⏱ {secsLeft}s</div>}
+        </div>
+      )}
+
+      {!listing ? (
+        <div className="center-screen">{joining ? t("preparingWallet") : t("noActiveArena")}</div>
       ) : (
-        <form className="offer-form" onSubmit={submit}>
-          <div className="field">
-            <label>{t("yourName")}</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t("yourNamePh")}
-              maxLength={40}
-            />
-          </div>
-
-          <div className="field">
-            <label>{t("offerAmount")}</label>
-            <div className="amount-row">
-              <input
-                type="range"
-                min="0.001"
-                max="0.05"
-                step="0.001"
-                value={amount}
-                onChange={(e) => setAmount(Number(e.target.value))}
-              />
-              <span className="amount-pill">{amount.toFixed(3)} MON</span>
-            </div>
-          </div>
-
-          <div className="field">
-            <label>{t("yourArgument")}</label>
-            <textarea
-              value={argument}
-              onChange={(e) => setArgument(e.target.value.slice(0, ARG_MAX))}
-              placeholder={t("yourArgumentPh")}
-            />
-            <div className="hint">
-              {ARG_MAX - argument.length} {t("charsLeft")}
-            </div>
+        <form className="offer-form chat" onSubmit={submit}>
+          <label className="chat-title">{t("describeTitle")}</label>
+          <textarea
+            className="chat-input"
+            value={text}
+            onChange={(e) => setText(e.target.value.slice(0, TEXT_MAX))}
+            placeholder={t("describePh")}
+            rows={6}
+            autoFocus
+          />
+          <div className="chat-foot">
+            <span className="hint">{t("hintBudget")}</span>
+            <span className="count">
+              {text.length}/{TEXT_MAX}
+            </span>
           </div>
 
           {error && <div className="error-text">{error}</div>}
 
-          <button className="btn" type="submit" disabled={submitting || closed}>
-            {submitting ? t("submitting") : t("submit")}
+          <button className="btn" type="submit" disabled={submitting || closed || !text.trim()}>
+            {submitting ? t("sending") : `🤖 ${t("send")}`}
           </button>
         </form>
       )}

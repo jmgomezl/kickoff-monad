@@ -2,111 +2,127 @@
 
 **Your agent negotiates. You win.** · _Tu agente negocia. Tú ganas._
 
-A P2P **agent-driven negotiation marketplace** on **Monad**. Sellers put up a prize
-with a *hidden* minimum price; buyers submit offers — an **amount _and_ an argument** —
-and an **AI agent (Claude)** evaluates every offer live, weighing price *and* the
-quality of the argument, then executes the winner on-chain. 0.4s finality, near-zero gas.
+An **agent-driven marketplace** on **Monad** — think Mercado Libre / eBay, but an
+**AI agent makes the call**. Buyers open a Telegram Mini App, get **50,000
+MONADCOP** for free, and describe — ChatGPT-style — what they want, their budget,
+and *why*. The agent reads every request, weighs **price _and_ the human story**,
+picks a winner, and **negotiates the final price** (above the seller's hidden
+reserve, at or below the buyer's max). The winner pays only the negotiated price;
+the difference is what *their agent saved them*. 0.4s finality, near-zero gas.
 
 > Built for **Monad Blitz Medellín** — June 2026.
-> The live demo: a real football on stage, a QR code, a Telegram Mini App, 90 seconds
-> of offers, an AI agent deciding in front of the crowd, and a dramatic price reveal.
+> On stage: a real football, a QR code, 90 seconds of live offers, an AI agent
+> deciding in front of the crowd, and a dramatic reserve reveal.
 
 ---
 
 ## How it works
 
 ```
- Seller ──commit keccak256(minPrice, salt)──▶ KickoffArena.sol  (Monad)
- Crowd  ──offer (amount + argument)─────────▶  escrowed bids
- Agent  ──Claude evaluates all offers───────▶  executeWinner(idx, reasoning)
- Seller ──revealMinPrice(minPrice, salt)────▶  THE REVEAL (spread shown)
+ Seller ──commit keccak256(reserve, salt)──▶ KickoffMarket.sol  (Monad)
+ Buyer  ──"quiero X, doy hasta 50mil, porque…"──▶ approve + submitOffer (MONADCOP)
+ Agent  ──reads every request, scores price + story──▶ executeWinner(idx, finalPrice)
+ Seller ──revealReserve(reserve, salt)──▶ THE REVEAL (margin over reserve)
 ```
 
-- **Commit–reveal**: the seller's minimum price is hidden until after the winner is
-  chosen, so the agent can't be gamed and the reveal stays dramatic.
-- **Escrowed offers**: each bid is real MON held by the contract; losers are refunded
-  (pull pattern), the winning bid goes to the seller.
-- **Anti-fraud collateral**: if the seller refuses to reveal within `REVEAL_WINDOW`,
-  anyone can `slashUnrevealed()` to forfeit the collateral to the winner.
+- **Custodial wallets**: each Telegram user gets a wallet created server-side and
+  encrypted with **AWS KMS envelope encryption** (one master key; local AES-256-GCM
+  fallback so a flaky venue network can't stall the demo). Adapted from a
+  production Hedera/KMS pattern to EVM/secp256k1.
+- **Free play money**: every new user is dripped **50,000 MONADCOP** (ERC20) + a
+  little MON for gas.
+- **Allowance-based, refund-free**: buyers *approve* their max budget (proof of
+  funds, no tokens move); the market pulls only the negotiated price from the
+  winner at the end. Losers are never charged.
+- **Commit–reveal reserve**: the seller's reserve is hidden until the reveal —
+  even the agent doesn't see it. The reveal proves the negotiated price cleared it.
 
 ## Architecture
 
 | Component | Path | Role |
 |---|---|---|
-| Contract | [`contracts/KickoffArena.sol`](contracts/KickoffArena.sol) | Commit-reveal arena, escrow, winner execution, collateral |
-| Agent | [`agent/index.js`](agent/index.js) | Watches Monad events; at deadline asks **Claude** to pick a winner, publishes reasoning, executes on-chain |
-| Backend | [`backend/index.js`](backend/index.js) | Express + WebSocket relay of contract events; **Telegram bot**; relays crowd offers on-chain |
-| Frontend | [`frontend/`](frontend/) | React + Vite, bilingual (ES/EN). `Arena` = big-screen feed, `Offer` = Telegram Mini App |
+| Token | [`contracts/MONADCOP.sol`](contracts/MONADCOP.sol) | ERC20 play-money, 50k drip per user |
+| Market | [`contracts/KickoffMarket.sol`](contracts/KickoffMarket.sol) | Listings, NL offers, agent-negotiated pricing, reserve reveal |
+| Wallets | [`backend/wallets.js`](backend/wallets.js) | KMS envelope encryption (+ local fallback), custodial wallet per user |
+| Backend | [`backend/index.js`](backend/index.js) | Express + WS, `/api/join` (wallet+airdrop), `/api/offer` (LLM parses budget, custodial sign), Telegram bot |
+| Agent | [`agent/index.js`](agent/index.js) | Scores budget + human story, negotiates final price, `executeWinner` |
+| LLM | [`shared/llm.js`](shared/llm.js) | Provider-agnostic — Anthropic Claude **or** OpenAI |
+| Frontend | [`frontend/`](frontend/) | React + Vite, bilingual ES/EN. `Offer` = ChatGPT-style Mini App, `Arena` = big-screen feed |
+
+> The original single-prize native-MON version lives in
+> [`contracts/KickoffArena.sol`](contracts/KickoffArena.sol) (superseded).
 
 ## Stack
 
-Solidity ^0.8.24 · Hardhat · Node + ethers v6 · Anthropic SDK (Claude Sonnet) ·
-Express + `ws` · Telegraf · React 18 + Vite · i18next · `@twa-dev/sdk` · Monad.
+Solidity ^0.8.24 · OpenZeppelin · Hardhat · Node + ethers v6 · AWS KMS ·
+OpenAI / Anthropic SDK · Express + `ws` · Telegraf · React 18 + Vite · i18next ·
+`@twa-dev/sdk` · Monad.
 
 ---
 
 ## Quick start
 
 ```bash
-# 0. Install
-npm install                 # root: contracts + scripts
-( cd agent && npm install )
+npm install                 # contracts + scripts + shared LLM SDKs
 ( cd backend && npm install )
+( cd agent && npm install )
 ( cd frontend && npm install )
 
-# 1. Configure
-cp .env.example .env        # fill PRIVATE_KEY, ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN…
+cp .env.example .env        # fill PRIVATE_KEY, AGENT_PRIVATE_KEY, OPENAI/ANTHROPIC,
+                            # TELEGRAM_BOT_TOKEN, AWS creds (optional)…
 
-# 2. Deploy the contract to Monad
-npm run deploy              # prints CONTRACT_ADDRESS -> put it in .env (and VITE_CONTRACT_ADDRESS)
+npm run deploy:v2           # deploys MONADCOP + KickoffMarket -> deploy/v2.json
+# put TOKEN_ADDRESS / MARKET_ADDRESS (+ VITE_*) into .env
 
-# 3. Run the stack (separate terminals)
-npm run backend            # Express + WS + Telegram bot
-npm run agent              # Claude evaluation loop
+npm run backend             # Express + WS + Telegram bot + treasury
+npm run agent               # LLM evaluation + negotiation loop
 ( cd frontend && npm run dev )
 
-# 4. Expose the frontend over HTTPS for the Telegram Mini App
-ngrok http 5173            # set the public URL as WEBAPP_URL + VITE_BOT_URL, restart backend
+ngrok http 5173             # set WEBAPP_URL + VITE_BOT_URL to the https URL, restart backend
 ```
 
 ### Run the demo
 
 ```bash
-npm run demo               # creates an arena, saves the salt, makes a QR, opens the Arena feed
-# … 90 seconds of offers; the agent decides automatically …
-npx hardhat run scripts/reveal.js --network monad   # the dramatic min-price reveal
+npm run demo                # create listing, save salt, make QR, open the feed
+# … 90s of offers; the agent decides + negotiates automatically …
+npx hardhat run scripts/reveal-reserve.js --network monad   # the reserve reveal
 ```
 
-Open the big screen at **`/arena`**; the Telegram Mini App opens **`/`**.
+Big screen at **`/arena`**; the Telegram Mini App opens **`/`**.
 
-## Environment
+## Key wallets (keep separate — avoids nonce races on Monad)
 
-See [`.env.example`](.env.example). Key blockers to clear first:
+- **PRIVATE_KEY** — deployer / seller / treasury (owns MONADCOP, drips, creates listings).
+- **AGENT_PRIVATE_KEY** — the agent (only calls `executeWinner`).
+- Per-user custodial wallets — created on demand, KMS-encrypted.
 
-1. **Fund the wallet** with MON for gas (and the relayer wallet for crowd offers).
-2. **Deploy the contract** — everything depends on `CONTRACT_ADDRESS`.
-3. **Telegram bot token** from [@BotFather](https://t.me/BotFather).
-4. **HTTPS URL** (ngrok or deployed) for the Mini App.
+## Monad notes (learned the hard way)
 
-> ⚠️ **Network note:** chainId `10143` is **Monad testnet**. The config is fully
-> env-driven (`MONAD_RPC_URL`, `MONAD_CHAIN_ID`) — point it wherever you actually
-> deploy. Test MON + near-zero gas makes testnet the natural fit for the demo.
+- The public RPC has **no `eth_newFilter`** — events are read via a chunked
+  `eth_getLogs` poller ([`shared/poller.js`](shared/poller.js)).
+- Monad charges the **gas limit**, not gas used — set limits deliberately.
+- A value-transfer + token-mint to the **same fresh account in one block** can
+  revert under parallel execution; the backend **retries** (a reverted tx frees
+  its nonce, so the retry lands in a later block).
+- chainId `10143` is **testnet** (`testnet-rpc.monad.xyz`); `rpc.monad.xyz` is
+  mainnet (`143`). Config is env-driven.
 
 ## Tests
 
 ```bash
-npx hardhat test           # full happy path, wrong-reveal, agent-only, collateral slash
+npx hardhat test            # KickoffMarket (negotiated pricing, reserve, guards) + KickoffArena
 ```
 
 ## Demo script (≈3m40s)
 
 1. Walk on stage with the football.
-2. _"Este balón se va a casa de alguien hoy. No lo decido yo — lo decide un agente de AI en tiempo real sobre Monad. Tienen 90 segundos."_
-3. Show the QR → audience scans → Mini App opens.
-4. Offers stream in live for 90s.
-5. The agent evaluates **publicly** — reasoning on screen.
-6. Winner announced → tx executes → 0.4s confirm on the explorer.
-7. **REVEAL**: the seller's min price, the spread, the crowd reacts.
+2. _"Este balón se va a casa de alguien hoy. No lo decido yo — lo decide un agente de IA en tiempo real sobre Monad. Tienen 90 segundos."_
+3. QR → audience scans → Mini App → 50k MONADCOP + a chat box.
+4. People type what they want, their budget, and **why**.
+5. The agent decides **publicly** — reasoning on screen, weighing price + story.
+6. Winner announced, agent **negotiates a lower price** → tx confirms in 0.4s.
+7. **REVEAL**: the seller's hidden reserve, the margin, the crowd reacts.
 8. Hand the ball to the winner.
 9. _"Eso fue Kickoff. Tu agente negocia. Tú ganas. kickoff.bot"_
 

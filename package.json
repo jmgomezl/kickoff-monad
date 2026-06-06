@@ -6,8 +6,11 @@
   "type": "commonjs",
   "scripts": {
     "compile": "hardhat compile",
+    "test": "hardhat test",
     "deploy": "hardhat run scripts/deploy.js --network monad",
-    "create-arena": "hardhat run scripts/create-arena.js --network monad",
+    "deploy:v2": "hardhat run scripts/deploy-v2.js --network monad",
+    "create-listing": "hardhat run scripts/create-listing.js --network monad",
+    "reveal": "hardhat run scripts/reveal-reserve.js --network monad",
     "agent": "node agent/index.js",
     "backend": "node backend/index.js",
     "demo": "bash scripts/demo-setup.sh"
