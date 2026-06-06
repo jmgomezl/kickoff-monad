@@ -169,7 +169,8 @@ Hay ${offers.length} compradores. Cada uno indicó su presupuesto MÁXIMO (en MO
 Compradores:
 ${offers.map((o) => `#${o.index} — máx ${o.maxBudget} MONADCOP — "${o.request}" (${o.buyer})`).join("\n")}
 
-Además, dramatiza la NEGOCIACIÓN: una conversación corta (5 a 8 turnos) entre el "agente del vendedor" (quiere buen precio para el vendedor) y los "agentes de cada comprador" (defienden la historia y el presupuesto de su comprador y regatean). Debe sentirse viva, en español, y terminar cerrando el trato con el ganador en finalPrice. A cada comprador dale una etiqueta corta y evocadora según su historia (ej: "El de la abuela coleccionista").
+Además, dramatiza la NEGOCIACIÓN: una conversación corta (5 a 8 turnos) entre el agente del vendedor (quiere buen precio) y los agentes de los compradores (defienden la historia y el presupuesto de su comprador y regatean). Debe sentirse viva, en español, y terminar cerrando el trato con el ganador en finalPrice.
+Reglas ESTRICTAS del campo "dialogue": cada elemento es UN turno. "role" es "seller" o "buyer". "who" es SOLO para buyers: una etiqueta corta y evocadora de ese comprador según su historia (ej: "El de la abuela coleccionista"); para seller usa "who": null. "text" contiene ÚNICAMENTE lo que dice el agente en esa réplica, en una o dos frases — SIN prefijos, SIN nombres, SIN "Etiqueta:", SIN comillas alrededor.
 
 Responde ÚNICAMENTE con JSON válido, sin texto extra:
 {"winnerIndex": <entero>, "finalPrice": <entero MONADCOP ≤ presupuesto del ganador>, "reasoning": "<2-3 frases en español: por qué ganó y por qué ese precio; menciona cuánto ahorró>", "dialogue": [{"role":"seller","text":"..."}, {"role":"buyer","who":"<etiqueta corta>","text":"..."}, ...]}`;
@@ -205,11 +206,24 @@ Responde ÚNICAMENTE con JSON válido, sin texto extra:
   let dialogue = Array.isArray(parsed?.dialogue)
     ? parsed.dialogue
         .filter((d) => d && d.text)
-        .map((d) => ({
-          role: d.role === "seller" ? "seller" : "buyer",
-          who: d.who ? String(d.who).slice(0, 40) : null,
-          text: String(d.text).slice(0, 220),
-        }))
+        .map((d) => {
+          // Defensive: strip any "Etiqueta: …" / character-label line the model
+          // may prepend, and surrounding quotes, so the bubble shows clean speech.
+          let text = String(d.text).trim();
+          text = text.replace(/^\s*(etiqueta|nombre|label)\s*:[^\n]*\n+/i, "");
+          if (text.includes("\n")) {
+            const [first, ...rest] = text.split("\n");
+            if (rest.length && /\(.*\)\s*$/.test(first.trim()) && first.length < 50) {
+              text = rest.join("\n").trim();
+            }
+          }
+          text = text.replace(/^["“'']+|["”'']+$/g, "").trim();
+          return {
+            role: d.role === "seller" ? "seller" : "buyer",
+            who: d.who ? String(d.who).slice(0, 40) : null,
+            text: text.slice(0, 220),
+          };
+        })
         .slice(0, 10)
     : [];
   if (dialogue.length === 0) {
