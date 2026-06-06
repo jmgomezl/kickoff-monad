@@ -2,7 +2,7 @@ require("@nomicfoundation/hardhat-toolbox");
 require("dotenv").config();
 
 const {
-  MONAD_RPC_URL = "https://rpc.monad.xyz",
+  MONAD_RPC_URL = "https://testnet-rpc.monad.xyz",
   MONAD_CHAIN_ID = "10143",
   PRIVATE_KEY,
 } = process.env;

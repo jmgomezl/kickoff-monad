@@ -14,7 +14,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 const fetch = require("node-fetch");
 
 const {
-  MONAD_RPC_URL = "https://rpc.monad.xyz",
+  MONAD_RPC_URL = "https://testnet-rpc.monad.xyz",
   CONTRACT_ADDRESS,
   AGENT_PRIVATE_KEY,
   PRIVATE_KEY,

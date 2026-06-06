@@ -18,8 +18,8 @@ const { ethers } = require("ethers");
 const { Telegraf, Markup } = require("telegraf");
 
 const {
-  MONAD_RPC_URL = "https://rpc.monad.xyz",
-  MONAD_EXPLORER = "https://monadscan.com",
+  MONAD_RPC_URL = "https://testnet-rpc.monad.xyz",
+  MONAD_EXPLORER = "https://testnet.monadexplorer.com",
   CONTRACT_ADDRESS,
   PORT = "3001",
   WS_PORT = "3002",
