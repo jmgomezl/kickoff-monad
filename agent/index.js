@@ -48,6 +48,22 @@ const fmt = (wei) => ethers.formatEther(wei);
 const short = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const scheduled = new Set();
 
+// Monad's public RPC throttles to ~15 req/sec; under a demo rush a read can be
+// rejected (-32011). Retry view calls with backoff so a transient throttle never
+// aborts a deal's on-screen show.
+async function rcall(fn, attempts = 8) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      await new Promise((r) => setTimeout(r, 300 + i * 350));
+    }
+  }
+  throw last;
+}
+
 // Seller attitudes — set per deal by the operator; steer winner, price and tone.
 const ATTITUDES = {
   humano:
@@ -96,24 +112,32 @@ async function emitToBackend(event) {
 }
 
 async function evaluate(listingId) {
-  if (scheduled.has(`done:${listingId}`)) return;
-  scheduled.add(`done:${listingId}`);
+  const doneKey = `done:${listingId}`;
+  if (scheduled.has(doneKey)) return;
 
-  const l = await market.getListing(listingId);
+  // Reads are retried; we only mark the deal "done" once we've successfully read
+  // it, so a throttled RPC call (which throws here) is retried by runEvaluate
+  // instead of silently skipping the whole show.
+  const l = await rcall(() => market.getListing(listingId));
   if (Number(l.state) !== 1) {
     console.log(`Listing ${listingId} not Open; skip.`);
+    scheduled.add(doneKey);
     return;
   }
   if (l.agent.toLowerCase() !== wallet.address.toLowerCase()) {
     console.log(`Listing ${listingId} agent ${l.agent} != me; skip.`);
+    scheduled.add(doneKey);
     return;
   }
-  const offers = await market.getOffers(listingId);
+  const offers = await rcall(() => market.getOffers(listingId));
   if (offers.length === 0) {
     console.log(`Listing ${listingId} closed with no offers.`);
+    scheduled.add(doneKey);
     await emitToBackend({ type: "agent_no_offers", listingId: String(listingId) });
     return;
   }
+  // Committed: this listing's show is running — don't double-process it.
+  scheduled.add(doneKey);
 
   console.log(`\n🤖 Evaluating listing ${listingId} "${l.itemName}" — ${offers.length} offers`);
   await emitToBackend({
@@ -262,13 +286,25 @@ Responde ÚNICAMENTE con JSON válido, sin texto extra:
   return { winnerIndex, finalPrice, reasoning, dialogue };
 }
 
+// Run evaluate, and if it throws (e.g. RPC throttle) retry a few times instead
+// of silently dropping the deal's show. The `done:` marker (set only after a
+// successful read) and the on-chain state check keep this idempotent.
+function runEvaluate(listingId, tries = 0) {
+  evaluate(listingId).catch((e) => {
+    console.error(`evaluate ${listingId} failed (try ${tries}): ${e.shortMessage || e.message || e}`);
+    if (tries < 10 && !scheduled.has(`done:${listingId}`)) {
+      setTimeout(() => runEvaluate(listingId, tries + 1), 3000);
+    }
+  });
+}
+
 function schedule(listingId, deadlineSec) {
   const idStr = String(listingId);
   if (scheduled.has(idStr)) return;
   scheduled.add(idStr);
   const waitMs = Math.max(0, (deadlineSec - Math.floor(Date.now() / 1000)) * 1000) + 2000;
   console.log(`⏱  Listing ${idStr} evaluates in ${Math.round(waitMs / 1000)}s`);
-  setTimeout(() => evaluate(listingId).catch((e) => console.error(e)), waitMs);
+  setTimeout(() => runEvaluate(listingId), waitMs);
 }
 
 async function bootstrap() {
@@ -281,9 +317,9 @@ async function bootstrap() {
   console.log("─".repeat(60));
 
   try {
-    const count = Number(await market.listingCount());
+    const count = Number(await rcall(() => market.listingCount()));
     for (let id = 1; id <= count; id++) {
-      const l = await market.getListing(id);
+      const l = await rcall(() => market.getListing(id));
       if (Number(l.state) === 1) schedule(id, Number(l.deadline));
     }
   } catch (e) {
