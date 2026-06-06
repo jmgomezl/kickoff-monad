@@ -87,6 +87,7 @@ function Negotiation({ dialogue = [], reasoning, t }) {
 
 export default function Arena() {
   const { t } = useTranslation();
+  const [ctrlOpen, setCtrlOpen] = useState(false);
   const { listingId, itemName, deadline, offers, phase, agent, reveal, attitude, txs, replaying, PHASES } =
     useArena();
   const ATT_KEY = { humano: "attHumano", equilibrado: "attEquilibrado", agresivo: "attAgresivo" };
@@ -118,7 +119,7 @@ export default function Arena() {
   return (
     <div className="arena">
       <LangToggle />
-      <ArenaControls listingId={listingId} />
+      <ArenaControls listingId={listingId} open={ctrlOpen} onClose={() => setCtrlOpen(false)} />
       <div className="arena-top">
         <div>
           <div className="brand">
@@ -126,21 +127,31 @@ export default function Arena() {
           </div>
           <div className="tagline">{t("tagline")} · {t("subtitle")}</div>
         </div>
-        {replaying && (
-          <div className="live-pill deliberating" style={{ marginRight: 8 }}>
-            ↻ {t("replay")}
-          </div>
-        )}
-        {phase === PHASES.LIVE && !replaying && (
-          <div className="live-pill">
-            <span className="dot" /> {t("live")}
-          </div>
-        )}
-        {phase === PHASES.EVALUATING && (
-          <div className="live-pill deliberating">
-            <span className="spin-sm" /> {t("deliberating")}
-          </div>
-        )}
+        <div className="arena-status">
+          {replaying && (
+            <div className="live-pill deliberating">
+              ↻ {t("replay")}
+            </div>
+          )}
+          {phase === PHASES.LIVE && !replaying && (
+            <div className="live-pill">
+              <span className="dot" /> {t("live")}
+            </div>
+          )}
+          {phase === PHASES.EVALUATING && (
+            <div className="live-pill deliberating">
+              <span className="spin-sm" /> {t("deliberating")}
+            </div>
+          )}
+          <button
+            className="op-gear"
+            onClick={() => setCtrlOpen(true)}
+            title={t("opPanel")}
+            aria-label={t("opPanel")}
+          >
+            ⚙️
+          </button>
+        </div>
       </div>
 
       <div className="arena-body">
