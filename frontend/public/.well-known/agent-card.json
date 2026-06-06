@@ -1,0 +1,33 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004",
+  "name": "kickoff negotiator",
+  "description": "Autonomous negotiator agent for the kickoff.bot marketplace on Monad. Reads sealed buyer offers (max budget + the human story behind them), weighs willingness-to-pay against genuine need, runs a live seller-agent↔buyer-agents negotiation, picks a winner and settles the trade on-chain.",
+  "url": "https://kickoff.bot",
+  "version": "1.0.0",
+  "provider": { "organization": "kickoff.bot", "url": "https://kickoff.bot" },
+  "registrations": [
+    {
+      "agentId": 1,
+      "agentRegistry": "eip155:10143:0x6766d5068e6a16510ca534BAA6bf024eaB77472C",
+      "agentAddress": "eip155:10143:0x54add870E0D7d4f45c71389a5a3522438c470B4f"
+    }
+  ],
+  "trustModels": ["feedback"],
+  "skills": [
+    {
+      "id": "negotiate",
+      "name": "Marketplace negotiation",
+      "description": "Evaluates competing buyer offers on price AND human story, negotiates a fair final price at/below the buyer's max and above the seller's hidden reserve, then executes the settlement on-chain.",
+      "tags": ["negotiation", "marketplace", "auctions", "monad"]
+    }
+  ],
+  "capabilities": { "streaming": false, "onchainSettlement": true },
+  "x-monad": {
+    "chainId": 10143,
+    "market": "0xFab111F34cCCBb6212a8788aC322b4A3571072D0",
+    "token": "0xD8E6798331265b46136198b1ECf492Cb84797acD",
+    "identityRegistry": "0x6766d5068e6a16510ca534BAA6bf024eaB77472C",
+    "agentId": 1,
+    "model": "gpt-5-mini"
+  }
+}
