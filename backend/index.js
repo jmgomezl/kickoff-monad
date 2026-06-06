@@ -619,14 +619,24 @@ app.get("/api/active", async (_req, res) => {
   try {
     const count = Number(await market.listingCount());
     let active = null;
-    for (let id = count; id >= 1; id--) {
-      const l = await market.getListing(id);
+    let latest = null;
+    if (count >= 1) {
+      const top = await rcall(() => market.getListing(count));
+      latest = {
+        listingId: String(count),
+        itemName: top.itemName,
+        state: Number(top.state),
+        deadline: Number(top.deadline),
+      };
+    }
+    for (let id = count; id >= Math.max(1, count - 12); id--) {
+      const l = await rcall(() => market.getListing(id));
       if (Number(l.state) === 1) {
         active = { listingId: String(id), itemName: l.itemName, deadline: Number(l.deadline) };
         break;
       }
     }
-    res.json({ active, listingCount: count });
+    res.json({ active, latest, listingCount: count });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

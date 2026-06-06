@@ -18,6 +18,7 @@ const resources = {
       offerN: "Oferta #{{n}}",
       waitingOffers: "Esperando ofertas…",
       live: "EN VIVO",
+      replay: "REPETICIÓN",
       // Phases
       phaseEvaluating: "El agente está decidiendo…",
       phaseEvaluatingSub: "Pondera el presupuesto y la historia de cada persona",
@@ -105,6 +106,7 @@ const resources = {
       offerN: "Offer #{{n}}",
       waitingOffers: "Waiting for offers…",
       live: "LIVE",
+      replay: "REPLAY",
       phaseEvaluating: "The agent is deciding…",
       phaseEvaluatingSub: "Weighing each person's budget and their story",
       deliberating: "The agent is deliberating…",

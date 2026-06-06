@@ -87,7 +87,8 @@ function Negotiation({ dialogue = [], reasoning, t }) {
 
 export default function Arena() {
   const { t } = useTranslation();
-  const { listingId, itemName, deadline, offers, phase, agent, reveal, txs, PHASES } = useArena();
+  const { listingId, itemName, deadline, offers, phase, agent, reveal, txs, replaying, PHASES } =
+    useArena();
   const { secs } = useCountdown(deadline);
 
   const reasoning = agent?.reasoning || "";
@@ -124,7 +125,12 @@ export default function Arena() {
           </div>
           <div className="tagline">{t("tagline")} · {t("subtitle")}</div>
         </div>
-        {phase === PHASES.LIVE && (
+        {replaying && (
+          <div className="live-pill deliberating" style={{ marginRight: 8 }}>
+            ↻ {t("replay")}
+          </div>
+        )}
+        {phase === PHASES.LIVE && !replaying && (
           <div className="live-pill">
             <span className="dot" /> {t("live")}
           </div>

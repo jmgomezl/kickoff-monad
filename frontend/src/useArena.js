@@ -23,8 +23,16 @@ export function useArena() {
   const [agent, setAgent] = useState(null);
   const [reveal, setReveal] = useState(null);
   const [txs, setTxs] = useState([]);
+  const [replaying, setReplaying] = useState(false);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef(null);
+  const replayTimers = useRef([]);
+
+  const clearReplay = useCallback(() => {
+    replayTimers.current.forEach(clearTimeout);
+    replayTimers.current = [];
+    setReplaying(false);
+  }, []);
 
   const addTx = useCallback((kind, txHash, amount) => {
     if (!txHash) return;
@@ -34,6 +42,7 @@ export function useArena() {
   const apply = useCallback((e) => {
     switch (e.type) {
       case "listing_created":
+        clearReplay();
         setListingId(e.listingId);
         setItemName(e.itemName);
         setDeadline(e.deadline);
@@ -82,39 +91,104 @@ export function useArena() {
     }
   }, []);
 
-  // Hydrate latest active listing on load.
+  // Hydrate on load: if there's an open deal → go live; if the latest deal is
+  // already decided → REPLAY the whole sealed→negotiation→winner→reveal sequence
+  // so the drama plays even when the projector loads late.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const r = await fetch(`${BACKEND_URL}/api/active`).then((x) => x.json());
-        if (cancelled || !r.active) return;
-        const snap = await fetch(`${BACKEND_URL}/api/listing/${r.active.listingId}`).then((x) =>
-          x.json()
-        );
-        if (cancelled) return;
+        const targetId = r.active?.listingId || r.latest?.listingId;
+        if (cancelled || !targetId) return;
+        const snap = await fetch(`${BACKEND_URL}/api/listing/${targetId}`).then((x) => x.json());
+        if (cancelled || !snap?.listingId) return;
+
         setListingId(snap.listingId);
         setItemName(snap.itemName);
         setDeadline(snap.deadline);
-        setOffers(
-          (snap.offers || []).map((o) => ({
-            type: "offer_submitted",
-            offerIndex: o.index,
-            buyer: o.buyer,
-            maxBudgetMcop: o.maxBudgetMcop,
-            request: o.request,
-          }))
-        );
-        (snap.log || []).forEach(apply);
-        if (snap.state === 1) setPhase(PHASES.LIVE);
+        const offerVMs = (snap.offers || []).map((o) => ({
+          type: "offer_submitted",
+          offerIndex: o.index,
+          buyer: o.buyer,
+          maxBudgetMcop: o.maxBudgetMcop,
+          request: o.request,
+        }));
+        setOffers(offerVMs);
+        // Replay the on-chain txs into the ticker either way.
+        (snap.log || []).filter((e) => e.txHash).forEach((e) => apply(e));
+
+        if (snap.state === 1) {
+          setPhase(PHASES.LIVE); // open — WS drives the rest live
+        } else if (snap.state >= 2) {
+          replaySnap(snap, offerVMs);
+        }
       } catch (_) {
         /* backend not up — WS will drive it */
       }
     })();
     return () => {
       cancelled = true;
+      clearReplay();
     };
-  }, [apply]);
+  }, [apply, clearReplay]);
+
+  // Scripted re-play of a finished deal.
+  function replaySnap(snap, offerVMs) {
+    clearReplay();
+    setReplaying(true);
+    setReveal(null);
+    setAgent(null);
+
+    const log = snap.log || [];
+    const reasoningEv = log.find((e) => e.type === "agent_reasoning");
+    const winnerEv = log.find((e) => e.type === "winner_chosen");
+    const revealEv = log.find((e) => e.type === "reserve_revealed");
+
+    const wi = Number(snap.winnerIndex) || 0;
+    const wOff = offerVMs[wi] || {};
+    const finalP = Number(snap.finalPriceMcop || 0);
+    const maxB = Number(wOff.maxBudgetMcop || 0);
+    const dialogue = reasoningEv?.dialogue || [];
+    const agentData = {
+      winnerIndex: wi,
+      winner: winnerEv?.winner || wOff.buyer,
+      finalPriceMcop: snap.finalPriceMcop,
+      maxBudgetMcop: wOff.maxBudgetMcop,
+      savingsMcop: String(Math.max(0, maxB - finalP)),
+      reasoning: reasoningEv?.reasoning || snap.reasoning,
+      dialogue,
+      txHash: winnerEv?.txHash,
+      explorerUrl: winnerEv?.explorerUrl,
+    };
+
+    const T = [];
+    const at = (ms, fn) => T.push(setTimeout(fn, ms));
+    setPhase(PHASES.LIVE); // sealed bidding
+    at(2600, () => setPhase(PHASES.EVALUATING)); // offers unseal, deliberating
+    at(5200, () => {
+      setAgent(agentData);
+      setPhase(PHASES.REASONING); // negotiation plays out
+    });
+    const dlgMs = (dialogue.length || 0) * 2200 + 1800;
+    const tWinner = 5200 + dlgMs;
+    at(tWinner, () => {
+      setAgent((a) => ({ ...(a || {}), ...agentData }));
+      setPhase(PHASES.WINNER);
+    });
+    if (snap.state >= 3 || revealEv) {
+      const revealData = revealEv || {
+        reserveMcop: snap.revealedReserveMcop,
+        finalPriceMcop: snap.finalPriceMcop,
+        marginMcop: String(finalP - Number(snap.revealedReserveMcop || 0)),
+      };
+      at(tWinner + 6000, () => {
+        setReveal(revealData);
+        setPhase(PHASES.REVEAL);
+      });
+    }
+    replayTimers.current = T;
+  }
 
   // Live WebSocket.
   useEffect(() => {
@@ -143,5 +217,5 @@ export function useArena() {
     };
   }, [apply]);
 
-  return { listingId, itemName, deadline, offers, phase, agent, reveal, txs, connected, PHASES };
+  return { listingId, itemName, deadline, offers, phase, agent, reveal, txs, replaying, connected, PHASES };
 }
