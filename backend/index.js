@@ -403,6 +403,46 @@ app.post("/api/join", async (req, res) => {
   }
 });
 
+// Buyer history — reconstructed from on-chain offers/winners (real traceability).
+const historyCache = new Map(); // address -> { ts, data }
+app.get("/api/history/:userId", async (req, res) => {
+  try {
+    const addr = wallets.getAddress(req.params.userId);
+    if (!addr) return res.json({ address: null, items: [] });
+
+    const cached = historyCache.get(addr.toLowerCase());
+    if (cached && Date.now() - cached.ts < 12000) return res.json(cached.data);
+
+    const count = Number(await market.listingCount());
+    const from = Math.max(1, count - 25); // last 25 deals
+    const items = [];
+    for (let id = count; id >= from; id--) {
+      const offers = await market.getOffers(id);
+      const idx = offers.findIndex((o) => o.buyer.toLowerCase() === addr.toLowerCase());
+      if (idx === -1) continue;
+      const l = await market.getListing(id);
+      const state = Number(l.state);
+      const decided = state >= 2;
+      const won = decided && Number(l.winnerIndex) === idx;
+      items.push({
+        listingId: String(id),
+        itemName: l.itemName,
+        maxBudgetMcop: fmt(offers[idx].maxBudget),
+        request: offers[idx].request,
+        state,
+        decided,
+        won,
+        finalPriceMcop: won ? fmt(l.finalPrice) : null,
+      });
+    }
+    const data = { address: addr, items };
+    historyCache.set(addr.toLowerCase(), { ts: Date.now(), data });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/api/wallet/:userId", async (req, res) => {
   try {
     const addr = wallets.getAddress(req.params.userId);

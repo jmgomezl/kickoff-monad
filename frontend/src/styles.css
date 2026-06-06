@@ -980,6 +980,81 @@ form.offer-form {
   letter-spacing: 0.5px;
 }
 
+/* Buyer activity log */
+.activity {
+  margin-top: 22px;
+}
+.activity-toggle {
+  width: 100%;
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  border-radius: 14px;
+  padding: 13px 16px;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.activity-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.activity-item {
+  background: var(--card);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid var(--muted);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.activity-item.won {
+  border-left-color: var(--green);
+}
+.activity-item.lost {
+  border-left-color: var(--muted);
+}
+.activity-item.open {
+  border-left-color: var(--purple);
+}
+.ai-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.ai-name {
+  font-weight: 700;
+  font-size: 15px;
+}
+.ai-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.ai-badge.won {
+  background: rgba(47, 230, 160, 0.15);
+  color: var(--green);
+}
+.ai-badge.lost {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+.ai-badge.open {
+  background: rgba(131, 110, 249, 0.15);
+  color: var(--purple-bright);
+}
+.ai-sub {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
 /* success */
 .success {
   flex: 1;

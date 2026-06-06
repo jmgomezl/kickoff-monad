@@ -31,6 +31,8 @@ export default function Offer() {
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
   const [result, setResult] = useState(null); // {won, price, savings}
+  const [history, setHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -85,6 +87,20 @@ export default function Offer() {
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 500);
     return () => clearInterval(id);
   }, []);
+
+  // Buyer history (on-chain). Refresh on mount and whenever a deal resolves.
+  useEffect(() => {
+    let alive = true;
+    fetch(`${BACKEND_URL}/api/history/${uid}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive) setHistory(d.items || []);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [uid, sent, result]);
 
   // After submitting, poll the listing to surface the result in-app (won/lost).
   useEffect(() => {
@@ -287,6 +303,36 @@ export default function Offer() {
             {submitting ? t("sending") : !ready ? t("preparingWallet") : `🤖 ${t("send")}`}
           </button>
         </form>
+      )}
+
+      {history.length > 0 && (
+        <div className="activity">
+          <button className="activity-toggle" onClick={() => setShowHistory((s) => !s)}>
+            📜 {t("myActivity")} ({history.length}) <span>{showHistory ? "▲" : "▼"}</span>
+          </button>
+          {showHistory && (
+            <div className="activity-list">
+              {history.map((h) => (
+                <div
+                  key={h.listingId}
+                  className={`activity-item ${h.won ? "won" : h.decided ? "lost" : "open"}`}
+                >
+                  <div className="ai-top">
+                    <span className="ai-name">{h.itemName}</span>
+                    <span className={`ai-badge ${h.won ? "won" : h.decided ? "lost" : "open"}`}>
+                      {h.won ? `🏆 ${t("histWon")}` : h.decided ? t("histLost") : t("histOpen")}
+                    </span>
+                  </div>
+                  <div className="ai-sub">
+                    {h.won
+                      ? `${t("histPaid")} ${Number(h.finalPriceMcop).toLocaleString()} MONADCOP`
+                      : `${t("histCap")}: ${Number(h.maxBudgetMcop).toLocaleString()} MONADCOP`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="foot">⚡ {t("poweredBy")}</div>
