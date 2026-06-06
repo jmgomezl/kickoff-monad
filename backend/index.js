@@ -91,6 +91,20 @@ const hasLlm = llm.provider() !== "none";
 const fmt = (wei) => ethers.formatEther(wei);
 const ONE = 10n ** 18n;
 
+// Read-call with retry — Monad's public RPC intermittently drops view calls.
+async function rcall(fn, attempts = 3) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+  throw last;
+}
+
 // ── Treasury nonce queue (serialize drip + gas-dust txs) ────────────────────
 // Re-syncs from the chain's pending count each tx, so it tolerates the seller /
 // reveal scripts also spending from this key without nonce collisions.
@@ -439,10 +453,10 @@ app.get("/api/history/:userId", async (req, res) => {
     const items = [];
     for (let id = count; id >= from; id--) {
       try {
-        const offers = await market.getOffers(id);
+        const offers = await rcall(() => market.getOffers(id));
         const idx = offers.findIndex((o) => o.buyer.toLowerCase() === addr.toLowerCase());
         if (idx === -1) continue;
-        const l = await market.getListing(id);
+        const l = await rcall(() => market.getListing(id));
         const state = Number(l.state);
         const decided = state >= 2;
         const won = decided && Number(l.winnerIndex) === idx;
@@ -483,8 +497,8 @@ app.get("/api/listings", async (_req, res) => {
     const out = [];
     for (let id = count; id >= from; id--) {
       try {
-        const l = await market.getListing(id);
-        const offerCount = Number(await market.getOfferCount(id));
+        const l = await rcall(() => market.getListing(id));
+        const offerCount = Number(await rcall(() => market.getOfferCount(id)));
         const state = Number(l.state);
         const txHash = winners[String(id)] || null;
         out.push({
